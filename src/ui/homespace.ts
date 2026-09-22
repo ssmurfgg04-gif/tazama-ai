@@ -15,6 +15,13 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { PROVIDERS } from "../settings.js";
+import {
+  buildBuddyChip,
+  getActiveCharacter,
+  renderCharactersPage,
+  personaMessages,
+  CharacterDef,
+} from "./characters.js";
 
 /* ─── Types ─── */
 interface TazamaMessage {
@@ -55,6 +62,33 @@ export function mountHomeSpace(root: HTMLElement): void {
   // Initial suggestions shimmer while loading
   showShimmer(body);
   setTimeout(() => showSuggestions(body), 800);
+
+  // ── Cross-surface events ──
+  // Buddy chip in the header → jump to Characters page
+  document.addEventListener("tazama:open-characters", () => {
+    const railBtn = document.querySelector<HTMLButtonElement>('.rail-row[data-page="characters"]');
+    railBtn?.click();
+  });
+
+  // A new buddy was cast → refresh the suggestions view + tell the mascot
+  document.addEventListener("tazama:buddy-cast", (e: Event) => {
+    const buddy = (e as CustomEvent<CharacterDef>).detail;
+    document.dispatchEvent(new CustomEvent("tazama:phase", { detail: "happy" }));
+    const bodyEl = document.querySelector(".homespace-body");
+    if (bodyEl && !document.getElementById("transcript")) {
+      showSuggestions(bodyEl as HTMLElement);
+    }
+    // Keep the header chip in sync even when Settings re-rendered it
+    const chip = document.querySelector(".buddy-chip");
+    if (chip) {
+      const face = chip.querySelector(".buddy-chip-face");
+      const name = chip.querySelector(".buddy-chip-name");
+      const craft = chip.querySelector(".buddy-chip-craft");
+      if (face) face.textContent = buddy.chipFace;
+      if (name) name.textContent = buddy.name;
+      if (craft) craft.textContent = buddy.craft;
+    }
+  });
 }
 
 /* ─── Compact rail ─── */
@@ -65,11 +99,12 @@ function buildRail(): HTMLElement {
   rail.setAttribute("aria-label", "Pages");
 
   const pages = [
-    { iconFile: "home",     label: "Home",     id: "home"     },
-    { iconFile: "agents",   label: "Agents",   id: "agents"   },
-    { iconFile: "zap",      label: "Skills",   id: "skills"   },
-    { iconFile: "settings", label: "Settings", id: "settings" },
-    { iconFile: "memory",   label: "Memory",   id: "memory"   },
+    { iconFile: "home",       label: "Home",       id: "home"       },
+    { iconFile: "characters", label: "Characters", id: "characters" },
+    { iconFile: "agents",     label: "Agents",     id: "agents"     },
+    { iconFile: "zap",        label: "Skills",     id: "skills"     },
+    { iconFile: "settings",   label: "Settings",   id: "settings"   },
+    { iconFile: "memory",     label: "Memory",     id: "memory"     },
   ];
 
   pages.forEach((p, i) => {
@@ -106,19 +141,21 @@ function selectPage(id: string, rail: HTMLElement, btn: HTMLButtonElement): void
     body.innerHTML = "";
     // Settings rendered by settings.ts; imported lazily
     import("./settings-page.js").then(m => m.renderSettings(body as HTMLElement));
+  } else if (id === "characters") {
+    body.innerHTML = "";
+    renderCharactersPage(body as HTMLElement);
   } else {
     showSuggestions(body as HTMLElement);
   }
 }
 
 /* ─── Header ─── */
+/* Buddy chip (current cast) on the left, close on the right. */
 function buildHeader(): HTMLElement {
   const hdr = document.createElement("header");
   hdr.className = "homespace-header";
 
-  const title = document.createElement("span");
-  title.className = "homespace-title";
-  title.textContent = "Tazama AI";
+  hdr.append(buildBuddyChip());
 
   const closeBtn = document.createElement("button");
   closeBtn.className = "header-btn";
@@ -126,7 +163,7 @@ function buildHeader(): HTMLElement {
   closeBtn.textContent = "✕";
   closeBtn.addEventListener("click", () => invoke("plugin:window|close"));
 
-  hdr.append(title, closeBtn);
+  hdr.append(closeBtn);
   return hdr;
 }
 
@@ -159,22 +196,44 @@ function showShimmer(container: HTMLElement): void {
 }
 
 /* ─── Suggestions ─── */
-/* Mirrors HomeSpaceSuggestionsPage / HomeSpaceSuggestedTaskCard */
+/* HomeSpaceSuggestionsPage / HomeSpaceSuggestedTaskCard — now persona-flavoured:
+ * a "Hello my name is" name-tag sticker (HeyClicky DNA) introduces the buddy,
+ * then their own starter prompts. */
 function showSuggestions(container: HTMLElement): void {
   container.innerHTML = "";
+  const buddy = getActiveCharacter();
+
+  // Name-tag sticker — the personality moment
+  const tag = document.createElement("div");
+  tag.className = "name-tag";
+  tag.style.setProperty("--char-accent", buddy.accent);
+
+  const tagHello = document.createElement("span");
+  tagHello.className = "name-tag-hello";
+  tagHello.textContent = "Hello, my name is";
+
+  const tagFace = document.createElement("span");
+  tagFace.className = "name-tag-face";
+  tagFace.textContent = buddy.face;
+
+  const tagName = document.createElement("span");
+  tagName.className = "name-tag-name";
+  tagName.textContent = buddy.name;
+
+  const tagLine = document.createElement("span");
+  tagLine.className = "name-tag-line";
+  tagLine.textContent = buddy.greeting;
+
+  tag.append(tagHello, tagFace, tagName, tagLine);
+  container.append(tag);
 
   const label = document.createElement("p");
   label.className = "section-label";
-  label.textContent = "SUGGESTED FOR YOU";
+  label.textContent = buddy.id === "tazama-classic" ? "SUGGESTED FOR YOU" : "ON THEIR MIND TODAY";
 
   container.append(label);
 
-  const suggestions = [
-    "Summarise what's on my screen",
-    "What's my next calendar event?",
-    "Draft a reply to the top email",
-    "Help me debug this error",
-  ];
+  const suggestions = buddy.suggestions;
 
   suggestions.forEach((text, i) => {
     const card = document.createElement("button");
@@ -191,7 +250,9 @@ function showSuggestions(container: HTMLElement): void {
 
   const footer = document.createElement("p");
   footer.className = "suggestions-footer";
-  footer.textContent = "Come back tomorrow for fresh ideas from your Tazama agents.";
+  footer.textContent = buddy.id === "tazama-classic"
+    ? "Come back tomorrow for fresh ideas from your Tazama agents."
+    : `Ask ${buddy.name} anything — or cast someone new from Characters.`;
   container.append(footer);
 }
 
@@ -206,6 +267,9 @@ function showConversation(container: HTMLElement): void {
 }
 
 function renderMessages(transcript: HTMLElement): void {
+  // Clear first — this renders the FULL transcript every time (append-only
+  // would duplicate every bubble on each state change).
+  transcript.innerHTML = "";
   messages.forEach(msg => {
     const bubble = document.createElement("div");
     bubble.className = `bubble bubble-${msg.role}`;
@@ -356,6 +420,8 @@ const DEFAULT_MODELS: Record<string, string> = {
   openai:    "gpt-4o-mini",
   groq:      "llama-3.3-70b-versatile",
   nvidia:    "meta/llama-3.1-70b-instruct",
+  zai:       "glm-4.6",
+  "zai-local": "glm-4.6",
 };
 
 async function pickProvider(): Promise<{ provider: string; model: string }> {
@@ -411,14 +477,17 @@ async function sendMessage(text: string, container: HTMLElement): Promise<void> 
       }
     } catch { /* memory DB not yet ready — continue without */ }
 
-    // Build messages: optional memory context as system-level prefix
-    const aiMessages = memoryContext
-      ? [
-          { role: "user", content: `[Context from memory]\n${memoryContext}` },
-          { role: "assistant", content: "Understood, I have that context." },
-          { role: "user", content: text },
-        ]
-      : [{ role: "user", content: text }];
+    // Build messages: optional memory context + active persona
+    const aiMessages = [
+      ...personaMessages(),
+      ...(memoryContext
+        ? [
+            { role: "user", content: `[Context from memory]\n${memoryContext}` },
+            { role: "assistant", content: "Understood, I have that context." },
+          ]
+        : []),
+      { role: "user", content: text },
+    ];
 
     // Invoke Rust provider (keys from OS keyring — never from JS)
     const { provider, model } = await pickProvider();

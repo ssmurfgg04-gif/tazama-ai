@@ -175,8 +175,10 @@ jobs:
 
             | File | Size | Description |
             |------|------|-------------|
-            | `*-setup.exe` | ~15 MB | **Recommended** — NSIS installer |
+            | `*-setup.exe` | ~15 MB | **Recommended** — Windows NSIS installer |
             | `*.msi` | ~15 MB | Alternative — Windows Installer |
+            | `*.AppImage` | — | **Linux** — run anywhere, no install |
+            | `*.deb` | — | Linux — Debian/Ubuntu package |
 
             > **Windows SmartScreen notice:** If Windows shows a blue "Windows protected your PC" dialog, click **"More info"** → **"Run anyway"**. This is expected for new apps without an extended-validation certificate. [See why →](https://github.com/${{ github.repository }}#smartscreen)
 
@@ -192,3 +194,81 @@ jobs:
           files: |
             ${{ steps.artifacts.outputs.nsis_path }}
             ${{ steps.artifacts.outputs.msi_path }}
+
+  build-linux:
+    name: Build Linux (AppImage + deb)
+    runs-on: ubuntu-22.04
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Node.js ───────────────────────────────────────────────────────
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      # ── 3. Rust ──────────────────────────────────────────────────────────
+      - name: Setup Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          cache-on-failure: true
+
+      # ── 4. System deps (WebKitGTK 4.1 + friends) ─────────────────────────
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libpipewire-0.3-dev \
+            patchelf
+
+      # ── 5. Frontend deps ─────────────────────────────────────────────────
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # ── 6. Build (AppImage + deb) ────────────────────────────────────────
+      - name: Build Tazama AI (Linux)
+        run: npm run tauri build
+        env:
+          CARGO_INCREMENTAL: '1'
+
+      # ── 7. Locate artifacts ──────────────────────────────────────────────
+      - name: Locate Linux artifacts
+        id: artifacts
+        run: |
+          appimage=$(find src-tauri/target -name '*.AppImage' 2>/dev/null | head -1)
+          deb=$(find src-tauri/target -name '*.deb' 2>/dev/null | head -1)
+          if [ -n "$appimage" ]; then
+            echo "AppImage: $appimage ($(du -h "$appimage" | cut -f1))"
+            echo "appimage_path=$appimage" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -n "$deb" ]; then
+            echo "deb: $deb ($(du -h "$deb" | cut -f1))"
+            echo "deb_path=$deb" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -z "$appimage" ] && [ -z "$deb" ]; then
+            echo "::error::No Linux artifacts produced."
+            exit 1
+          fi
+
+      # ── 8. Attach to the same release (files only, body stays) ───────────
+      - name: Attach Linux artifacts to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', inputs.version) }}
+          files: |
+            ${{ steps.artifacts.outputs.appimage_path }}
+            ${{ steps.artifacts.outputs.deb_path }}

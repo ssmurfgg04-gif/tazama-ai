@@ -10,6 +10,8 @@ export const PROVIDERS: ProviderDef[] = [
   { id: "openai", label: "OpenAI" },
   { id: "groq", label: "Groq" },
   { id: "nvidia", label: "NVIDIA" },
+  { id: "zai", label: "Z.ai (GLM)" },
+  { id: "zai-local", label: "Z.AI Local" },
   { id: "fish", label: "Fish Audio" },
 ];
 
@@ -121,7 +123,11 @@ function buildRow(def: ProviderDef): HTMLElement {
     }
   });
 
-  row.append(name, badge, input, saveBtn, removeBtn, testBtn, testResult, status);
+  const actions = document.createElement("div");
+  actions.className = "settings-row-actions";
+  actions.append(saveBtn, removeBtn, testBtn);
+
+  row.append(name, badge, input, actions, testResult, status);
   return row;
 }
 

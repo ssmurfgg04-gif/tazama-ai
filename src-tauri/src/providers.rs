@@ -30,6 +30,13 @@ pub const OPENAI_BASE: &str = "https://api.openai.com";
 pub const GROQ_BASE: &str = "https://api.groq.com/openai";
 pub const NVIDIA_BASE: &str = "https://integrate.api.nvidia.com";
 pub const FISH_BASE: &str = "https://api.fish.audio";
+/// Z.ai open platform (GLM models) — OpenAI-shaped, Bearer auth, but the
+/// version lives in the path (`/api/paas/v4/chat/completions`), so the
+/// shared `/v1/...` helpers take a full-URL variant below.
+pub const ZAI_BASE: &str = "https://api.z.ai/api/paas/v4";
+/// Local Z.ai SDK proxy (`scripts/zai-proxy.mjs`) — OpenAI-shaped, any key.
+/// Lets the app chat through the locally-authenticated Z.ai SDK with zero keys.
+pub const ZAI_LOCAL_BASE: &str = "http://127.0.0.1:8788";
 
 /// Resolve a provider name to its API base URL.
 pub(crate) fn base_for(provider: &str) -> Result<&'static str, String> {
@@ -39,6 +46,8 @@ pub(crate) fn base_for(provider: &str) -> Result<&'static str, String> {
         "groq" => Ok(GROQ_BASE),
         "nvidia" => Ok(NVIDIA_BASE),
         "fish" => Ok(FISH_BASE),
+        "zai" => Ok(ZAI_BASE),
+        "zai-local" => Ok(ZAI_LOCAL_BASE),
         other => Err(format!("unknown provider `{other}`")),
     }
 }
@@ -191,7 +200,7 @@ pub(crate) async fn anthropic_chat_with_base(
 }
 
 /// OpenAI-compatible chat against an explicit base (`Authorization: Bearer`).
-/// Covers OpenAI, Groq, and NVIDIA (all OpenAI-shape).
+/// Covers OpenAI, Groq, NVIDIA, and zai-local (all OpenAI-shape).
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn openai_chat_with_base(
     client: &reqwest::Client,
@@ -201,8 +210,30 @@ pub(crate) async fn openai_chat_with_base(
     model: &str,
     messages: &[(String, String)],
 ) -> Result<String, String> {
+    openai_chat_with_url(
+        client,
+        &format!("{base}/v1/chat/completions"),
+        key,
+        provider,
+        model,
+        messages,
+    )
+    .await
+}
+
+/// OpenAI-compatible chat against a full endpoint URL. Z.ai's version lives
+/// in the path (`/api/paas/v4/...`), so it calls this directly.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn openai_chat_with_url(
+    client: &reqwest::Client,
+    url: &str,
+    key: &str,
+    provider: &str,
+    model: &str,
+    messages: &[(String, String)],
+) -> Result<String, String> {
     let resp = client
-        .post(format!("{base}/v1/chat/completions"))
+        .post(url)
         .bearer_auth(key)
         .json(&openai_body(model, messages))
         .send()
@@ -244,7 +275,24 @@ pub(crate) async fn key_probe_with_base(
     key: &str,
     provider: &str,
 ) -> Result<bool, String> {
-    let req = client.get(format!("{base}/v1/models"));
+    key_probe_with_url(
+        client,
+        &format!("{base}/v1/models"),
+        key,
+        provider,
+    )
+    .await
+}
+
+/// Key probe against a full endpoint URL (Z.ai's models live at
+/// `/api/paas/v4/models`).
+pub(crate) async fn key_probe_with_url(
+    client: &reqwest::Client,
+    url: &str,
+    key: &str,
+    provider: &str,
+) -> Result<bool, String> {
+    let req = client.get(url);
     let req = if provider == "anthropic" {
         req.header("x-api-key", key)
             .header("anthropic-version", "2023-06-01")
@@ -285,6 +333,17 @@ pub async fn chat_complete<R: Runtime>(
             .join("\n");
         let bytes = fish_speak_with_base(&client, base, &key, &provider, &text).await?;
         Ok(encode_b64(&bytes))
+    } else if provider == "zai" {
+        // Z.ai: OpenAI shape but versioned path — /api/paas/v4/chat/completions
+        openai_chat_with_url(
+            &client,
+            &format!("{base}/chat/completions"),
+            &key,
+            &provider,
+            &model,
+            &pairs,
+        )
+        .await
     } else {
         openai_chat_with_base(&client, base, &key, &provider, &model, &pairs).await
     }
@@ -301,6 +360,10 @@ pub async fn key_test<R: Runtime>(
     let key = read_key(&app, &provider)?;
     let base = base_for(&provider)?;
     let client = http_client(&state)?;
+    if provider == "zai" {
+        // Versioned path: /api/paas/v4/models
+        return key_probe_with_url(&client, &format!("{base}/models"), &key, &provider).await;
+    }
     key_probe_with_base(&client, base, &key, &provider).await
 }
 
@@ -429,6 +492,8 @@ mod tests {
         assert_eq!(base_for("groq").unwrap(), GROQ_BASE);
         assert_eq!(base_for("nvidia").unwrap(), NVIDIA_BASE);
         assert_eq!(base_for("fish").unwrap(), FISH_BASE);
+        assert_eq!(base_for("zai").unwrap(), ZAI_BASE);
+        assert_eq!(base_for("zai-local").unwrap(), ZAI_LOCAL_BASE);
         assert!(base_for("unknown-provider").is_err());
     }
 

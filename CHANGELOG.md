@@ -1,5 +1,58 @@
 # Changelog
 
+## [0.2.0] — 2026-09-22
+
+### Characters — cast your buddy
+
+- 16 original castable characters across 8 archetype families (Sci-Fi Chaos,
+  Office Sitcom, Meadowcore, Fantasy Quest, Detective Noir, Saturday Morning,
+  Deep Sea Radio, Cozy Slice-of-Life) plus the Tazama classic eye
+- Gleam-inspired "Cast a buddy" page: search, family filters, persona detail
+  with traits and sample line, one-click cast, Surprise me shuffle
+- Casting changes everything: accent colour, header buddy chip, name-tag
+  greeting, personalised starter prompts, and the AI's voice via a persona
+  system prompt prepended to chat completions
+
+### Personality & Apple-taste UI overhaul
+
+- Ambient aurora background replaces the flat black canvas (accent-tinted,
+  drifts slowly, honours the animations toggle and reduced motion)
+- Liquid-Glass material pass: floating dock rail with gel active pill and
+  hover tooltips, glass suggested cards with accent lift, elevated composer
+  with scroll-edge shadow, glass settings groups
+- HeyClicky "Hello my name is" name-tag sticker as the Home identity moment
+- Settings rows rebuilt as a predictable grid with pill action buttons
+- Visible keyboard focus rings everywhere (HIG)
+- Notch pill + HUD step aside inside the app window (they are ambient
+  overlays; the header buddy chip is the in-app presence)
+
+### AI providers
+
+- New `zai` provider for the Z.ai open platform (GLM models, Bearer key)
+- New `zai-local` provider: chat through the locally-authenticated
+  z-ai-web-dev-sdk via `scripts/zai-proxy.mjs` (OpenAI-compatible localhost
+  proxy on 127.0.0.1:8788 — zero keys needed)
+
+### Linux support
+
+- Full Linux port: UIA/SendKeys code paths are Windows-gated; Linux ships
+  screenshot capture (xcap) with graceful fallbacks for computer-use
+- Keys: Linux sessions without a secret service fall back to a 0600 file
+  store inside the app-data dir
+- Release pipeline now builds Linux AppImage + deb alongside the Windows
+  NSIS + MSI; build-check runs the full Rust test suite on Linux too
+
+### Fixed
+
+- Conversation transcript duplicated every bubble on each message render
+  (append-only renderMessages never cleared the container first)
+
+### QA
+
+- Windows QA workflow now quiets the desktop before screenshots: minimises
+  all windows and hides the runner host console so evidence shows only the app
+
+
 All notable changes to Tazama AI are documented here.
 
 ## [0.1.0] — 2026-09-22

@@ -89,6 +89,7 @@ pub async fn screenshot() -> Result<ScreenshotResult, String> {
 
 // ─── UI Element walk ──────────────────────────────────────────────────────────
 
+#[cfg(windows)]
 #[tauri::command]
 pub fn get_ui_elements(max_depth: Option<u32>) -> Vec<ScreenElement> {
     let depth = max_depth.unwrap_or(3).min(5);
@@ -101,6 +102,7 @@ pub fn get_ui_elements(max_depth: Option<u32>) -> Vec<ScreenElement> {
     out
 }
 
+#[cfg(windows)]
 fn walk(
     auto: &uiautomation::UIAutomation,
     el: &uiautomation::UIElement,
@@ -150,6 +152,7 @@ fn walk(
 // Uses PowerShell for mouse/keyboard (avoids unsafe Win32 complexity)
 // and matches Anthropic computer_toolset_20260801 batch semantics.
 
+#[cfg(windows)]
 #[tauri::command]
 pub fn cu_exec(action: CUAction) -> Result<String, String> {
     let scale = action.scale_factor.unwrap_or(1.0);
@@ -278,6 +281,7 @@ pub fn cu_exec(action: CUAction) -> Result<String, String> {
     }
 }
 
+#[cfg(windows)]
 fn ps_run(script: &str) -> Result<String, String> {
     let out = std::process::Command::new("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", script])
@@ -290,6 +294,7 @@ fn ps_run(script: &str) -> Result<String, String> {
     }
 }
 
+#[cfg(windows)]
 fn key_to_sendkeys(key: &str) -> Result<String, String> {
     let mut result = String::new();
     for part in key.split('+') {
@@ -316,6 +321,7 @@ fn key_to_sendkeys(key: &str) -> Result<String, String> {
 
 // ─── Clipboard write ──────────────────────────────────────────────────────────
 
+#[cfg(windows)]
 #[allow(dead_code)]
 #[tauri::command]
 pub fn clipboard_write_capture(text: String) -> Result<(), String> {
@@ -327,7 +333,47 @@ pub fn clipboard_write_capture(text: String) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(not(windows))]
+#[tauri::command]
+pub fn get_ui_elements(_max_depth: Option<u32>) -> Vec<ScreenElement> {
+    Vec::new()
+}
+
+#[cfg(not(windows))]
+#[tauri::command]
+pub fn cu_exec(_action: CUAction) -> Result<String, String> {
+    Err("computer-use actions need Windows right now — screenshots still work on Linux".into())
+}
+
+#[cfg(not(windows))]
+#[allow(dead_code)]
+#[tauri::command]
+pub fn clipboard_write_capture(text: String) -> Result<(), String> {
+    // Try wl-copy (Wayland) then xclip (X11) — degrade gracefully.
+    for (bin, args) in [
+        ("wl-copy", &["--primary"][..]),
+        ("xclip", &["-selection", "clipboard"][..]),
+    ] {
+        if let Ok(mut child) = std::process::Command::new(bin)
+            .args(args)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+        {
+            use std::io::Write;
+            if let Some(mut sin) = child.stdin.take() {
+                let _ = sin.write_all(text.as_bytes());
+            }
+            if child.wait().map(|s| s.success()).unwrap_or(false) {
+                return Ok(());
+            }
+        }
+    }
+    Err("clipboard needs wl-copy or xclip installed".into())
+}
+
+#[cfg(all(test, windows))]
 mod tests {
     use super::*;
 

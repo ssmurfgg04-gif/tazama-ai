@@ -1,0 +1,697 @@
+/* ═══════════════════════════════════════════════════════════════
+   Tazama AI — Personality & Polish layer
+   Loaded after app.css + features.css. Apple HIG taste:
+     · Materials first (Liquid-Glass regular / clear variants)
+     · Semantic label colours, accent used sparingly
+     · Tight display tracking, 13px macOS body
+     · Springy, purposeful motion — reduced-motion respected
+   HeyClicky DNA: kaomoji faces, name-tag sticker, warm copy.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── Ambient aurora — no more black canvas ─── */
+/* Deep space base with two accent-tinted light fields drifting slowly. */
+
+.homespace {
+  position: relative;
+  background:
+    radial-gradient(120% 90% at 82% -10%, color-mix(in oklab, var(--accent) 26%, transparent) 0%, transparent 55%),
+    radial-gradient(90% 70% at -15% 108%, color-mix(in oklab, var(--accent) 16%, transparent) 0%, transparent 52%),
+    linear-gradient(180deg, #101117 0%, #0c0d12 100%);
+  isolation: isolate;
+}
+
+/* Drifting light blobs (ambient — killed by animations toggle) */
+.homespace::before,
+.homespace::after {
+  content: "";
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(70px);
+  opacity: calc(0.35 * var(--animations-enabled));
+  pointer-events: none;
+  z-index: 0;
+}
+.homespace::before {
+  width: 340px; height: 340px;
+  top: -110px; right: -90px;
+  background: color-mix(in oklab, var(--accent) 38%, transparent);
+  animation: aurora-drift 26s ease-in-out infinite alternate;
+}
+.homespace::after {
+  width: 300px; height: 300px;
+  bottom: -120px; left: -80px;
+  background: color-mix(in oklab, var(--accent) 22%, #7c5cff 12%, transparent);
+  animation: aurora-drift 34s ease-in-out infinite alternate-reverse;
+}
+@keyframes aurora-drift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to   { transform: translate3d(-34px, 26px, 0) scale(1.12); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .homespace::before, .homespace::after { animation: none; }
+}
+
+/* Everything above the light field */
+.homespace-main { position: relative; z-index: 1; }
+
+/* ─── Glass material tokens (HIG: regular = blurred + luminous) ─── */
+.homespace {
+  --glass-regular: rgba(28, 29, 38, 0.55);
+  --glass-regular-strong: rgba(24, 25, 32, 0.72);
+  --glass-hairline: rgba(255, 255, 255, 0.09);
+  --glass-inner-light: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --label-primary: #f2f3f7;
+  --label-secondary: rgba(235, 237, 245, 0.66);
+  --label-tertiary: rgba(235, 237, 245, 0.42);
+  --label-quaternary: rgba(235, 237, 245, 0.24);
+}
+
+/* ─── Rail: floating glass dock with Liquid-Glass active pill ─── */
+.compact-rail {
+  margin: 10px 0 10px 10px;
+  border-radius: 20px;
+  background: var(--glass-regular);
+  border: 1px solid var(--glass-hairline);
+  box-shadow: var(--glass-inner-light), 0 10px 30px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(28px) saturate(1.4);
+  -webkit-backdrop-filter: blur(28px) saturate(1.4);
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 10px 0;
+}
+
+.rail-row {
+  position: relative;
+  border-radius: 12px;
+  transition: background var(--t-fast), transform var(--t-fast), box-shadow var(--t-fast);
+}
+.rail-row:hover { background: rgba(255, 255, 255, 0.07); transform: translateY(-1px); }
+.rail-row:active { transform: scale(0.92); }
+.rail-row.is-selected {
+  background: linear-gradient(180deg,
+    color-mix(in oklab, var(--accent) 92%, white 8%),
+    color-mix(in oklab, var(--accent) 72%, black 6%));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.28),
+    0 2px 8px color-mix(in oklab, var(--accent) 40%, transparent);
+}
+.rail-row.is-selected img { filter: brightness(0) invert(1) !important; }
+
+/* Tooltip on hover (from title attr) */
+.rail-row[title]:hover::after {
+  content: attr(title);
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(18, 19, 24, 0.92);
+  color: var(--label-primary);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 9px;
+  border-radius: 7px;
+  white-space: nowrap;
+  border: 1px solid var(--glass-hairline);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  z-index: 30;
+  pointer-events: none;
+  animation: tooltip-in 140ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes tooltip-in {
+  from { opacity: 0; transform: translate(-3px, -50%); }
+  to   { opacity: 1; transform: translate(0, -50%); }
+}
+
+/* ─── Header: transparent, hairline only ─── */
+.homespace-header {
+  background: transparent;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  backdrop-filter: none;
+}
+
+/* Buddy chip — glass pill with kaomoji + name/craft */
+.buddy-chip {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 4px 12px 4px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--glass-hairline);
+  background: var(--glass-regular);
+  backdrop-filter: blur(24px) saturate(1.3);
+  -webkit-backdrop-filter: blur(24px) saturate(1.3);
+  box-shadow: var(--glass-inner-light);
+  cursor: pointer;
+  color: var(--label-primary);
+  transition: transform var(--t-fast), border-color var(--t-fast), background var(--t-fast);
+}
+.buddy-chip:hover { transform: translateY(-1px); border-color: rgba(255, 255, 255, 0.18); }
+.buddy-chip:active { transform: scale(0.97); }
+.buddy-chip-face {
+  font-size: 15px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--accent) 22%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 34%, transparent);
+}
+.buddy-chip-meta { display: flex; flex-direction: column; align-items: flex-start; gap: 0; }
+.buddy-chip-name {
+  font-size: 12.5px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+.buddy-chip-craft {
+  font-size: 10.5px;
+  color: var(--label-tertiary);
+  line-height: 1.2;
+}
+
+/* ─── Name-tag sticker — the personality moment ─── */
+.name-tag {
+  position: relative;
+  margin: 6px 2px 18px;
+  padding: 15px 18px 14px;
+  border-radius: 14px;
+  background: linear-gradient(175deg, #ffffff 0%, #f4f4f6 100%);
+  color: #17181d;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.25),
+    0 12px 28px rgba(0, 0, 0, 0.38),
+    0 2px 6px rgba(0, 0, 0, 0.22);
+  transform: rotate(-1.3deg);
+  transition: transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  animation: tag-settle 520ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.name-tag:hover { transform: rotate(-0.4deg) scale(1.012); }
+@keyframes tag-settle {
+  from { opacity: 0; transform: rotate(1.6deg) translateY(-9px) scale(0.97); }
+  to   { opacity: 1; transform: rotate(-1.3deg) translateY(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) { .name-tag { animation: none; } }
+
+/* Printed blue band — "Hello, my name is" */
+.name-tag-hello {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  display: block;
+  background: var(--char-accent, var(--accent));
+  color: rgba(255, 255, 255, 0.96);
+  font-family: var(--font-companion);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-align: center;
+  padding: 4px 0 5px;
+  border-radius: 14px 14px 0 0;
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.08);
+}
+
+.name-tag-face {
+  display: block;
+  font-size: 30px;
+  line-height: 1;
+  margin: 18px 0 6px;
+}
+.name-tag-name {
+  display: block;
+  font-family: var(--font-companion);
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+.name-tag-line {
+  display: block;
+  margin-top: 3px;
+  font-size: 13px;
+  font-style: italic;
+  color: #5c5e6a;
+}
+
+/* ─── Suggested cards: glass rows with accent lift ─── */
+.suggested-card {
+  background: var(--glass-regular);
+  border: 1px solid var(--glass-hairline);
+  backdrop-filter: blur(20px) saturate(1.25);
+  -webkit-backdrop-filter: blur(20px) saturate(1.25);
+  box-shadow: var(--glass-inner-light), 0 4px 14px rgba(0, 0, 0, 0.22);
+  color: var(--label-secondary);
+  border-radius: 14px;
+  padding: 13px 16px;
+  transition:
+    transform var(--t-fast),
+    border-color var(--t-fast),
+    background var(--t-fast),
+    box-shadow var(--t-fast);
+}
+.suggested-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+  color: var(--label-primary);
+  box-shadow:
+    var(--glass-inner-light),
+    0 10px 26px rgba(0, 0, 0, 0.34),
+    0 0 0 1px color-mix(in oklab, var(--accent) 22%, transparent);
+}
+.suggested-card::before {
+  content: "›";
+  float: right;
+  color: var(--label-quaternary);
+  font-weight: 600;
+  transition: color var(--t-fast), transform var(--t-fast);
+}
+.suggested-card:hover::before {
+  color: var(--accent);
+  transform: translateX(2px);
+}
+
+.section-label { color: var(--label-tertiary); }
+.suggestions-footer { color: var(--label-quaternary); }
+
+/* ─── Composer: elevated glass + scroll-edge effect ─── */
+.composer {
+  position: relative;
+  z-index: 2;
+  background: var(--glass-regular-strong);
+  backdrop-filter: blur(30px) saturate(1.5);
+  -webkit-backdrop-filter: blur(30px) saturate(1.5);
+  border: 1px solid var(--glass-hairline);
+  box-shadow:
+    var(--glass-inner-light),
+    0 -18px 30px -18px rgba(0, 0, 0, 0.5),  /* scroll-edge shadow */
+    0 10px 30px rgba(0, 0, 0, 0.30);
+  border-radius: 18px 18px 0 0;
+  border-bottom: none;
+}
+
+.composer-input { color: var(--label-primary); }
+.composer-input::placeholder { color: var(--label-quaternary); }
+
+.send-btn {
+  background: linear-gradient(180deg,
+    color-mix(in oklab, var(--accent) 88%, white 12%),
+    color-mix(in oklab, var(--accent) 80%, black 10%));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.25),
+    0 2px 8px color-mix(in oklab, var(--accent) 45%, transparent);
+  border: none;
+}
+.send-btn:active { transform: scale(0.94); }
+
+/* ─── Bubbles: user = accent gradient, assistant = glass ─── */
+.bubble-user {
+  background: linear-gradient(180deg,
+    color-mix(in oklab, var(--accent) 90%, white 10%),
+    color-mix(in oklab, var(--accent) 76%, black 8%));
+  color: #ffffff;
+  box-shadow: 0 4px 14px color-mix(in oklab, var(--accent) 30%, transparent);
+}
+.bubble-assistant {
+  background: var(--glass-regular);
+  border: 1px solid var(--glass-hairline);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  color: var(--label-primary);
+  box-shadow: var(--glass-inner-light);
+}
+
+/* ─── Gel buttons (Cast / Surprise me) ─── */
+.btn-gel {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 18px;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  background: linear-gradient(180deg,
+    color-mix(in oklab, var(--char-accent, var(--accent)) 88%, white 12%),
+    color-mix(in oklab, var(--char-accent, var(--accent)) 78%, black 10%));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.24),
+    0 2px 10px color-mix(in oklab, var(--char-accent, var(--accent)) 40%, transparent);
+  transition: transform var(--t-fast), box-shadow var(--t-fast), filter var(--t-fast);
+}
+.btn-gel:hover { transform: translateY(-1px); filter: brightness(1.06); }
+.btn-gel:active { transform: scale(0.96); box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.3); }
+
+/* ─── Characters page ─── */
+.characters-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 20px;
+}
+
+.characters-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.characters-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.028em;
+  color: var(--label-primary);
+}
+.characters-sub {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--label-tertiary);
+  max-width: 260px;
+}
+.surprise-btn { white-space: nowrap; }
+
+.characters-search {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--glass-hairline);
+  background: var(--glass-regular);
+  color: var(--label-primary);
+  font-size: 13px;
+  outline: none;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  transition: border-color var(--t-fast), box-shadow var(--t-fast);
+}
+.characters-search::placeholder { color: var(--label-quaternary); }
+.characters-search:focus {
+  border-color: color-mix(in oklab, var(--accent) 55%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 18%, transparent);
+}
+
+.family-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.family-chip {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--glass-hairline);
+  background: var(--glass-regular);
+  color: var(--label-secondary);
+  font-size: 11.5px;
+  font-weight: 550;
+  cursor: pointer;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition: all var(--t-fast);
+}
+.family-chip:hover { color: var(--label-primary); border-color: rgba(255, 255, 255, 0.2); }
+.family-chip.is-active {
+  background: color-mix(in oklab, var(--accent) 82%, transparent);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 2px 8px color-mix(in oklab, var(--accent) 35%, transparent);
+}
+
+.character-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 9px;
+}
+.character-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 13px 6px 10px;
+  border-radius: 14px;
+  border: 1px solid var(--glass-hairline);
+  background: var(--glass-regular);
+  cursor: pointer;
+  color: var(--label-secondary);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: var(--glass-inner-light);
+  transition: transform var(--t-fast), border-color var(--t-fast), background var(--t-fast);
+}
+.character-card:hover { transform: translateY(-2px); border-color: color-mix(in oklab, var(--char-accent) 50%, transparent); }
+.character-card:active { transform: scale(0.96); }
+.character-card.is-active {
+  border-color: color-mix(in oklab, var(--char-accent) 70%, transparent);
+  background: color-mix(in oklab, var(--char-accent) 14%, rgba(28, 29, 38, 0.55));
+  box-shadow: var(--glass-inner-light), 0 0 0 1px color-mix(in oklab, var(--char-accent) 40%, transparent);
+}
+.character-face {
+  font-size: 21px;
+  line-height: 1.1;
+  margin-bottom: 4px;
+  filter: drop-shadow(0 2px 6px color-mix(in oklab, var(--char-accent) 45%, transparent));
+}
+.character-name {
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--label-primary);
+  letter-spacing: -0.01em;
+  text-align: center;
+  line-height: 1.2;
+}
+.character-craft {
+  font-size: 9.5px;
+  color: var(--label-tertiary);
+  text-align: center;
+  line-height: 1.25;
+}
+.character-family {
+  display: none;
+}
+.characters-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: var(--label-tertiary);
+  font-size: 12.5px;
+  padding: 18px 0;
+}
+
+/* Detail panel */
+.character-detail {
+  display: flex;
+  gap: 16px;
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid color-mix(in oklab, var(--char-accent, var(--accent)) 30%, var(--glass-hairline));
+  background: var(--glass-regular-strong);
+  backdrop-filter: blur(26px) saturate(1.35);
+  -webkit-backdrop-filter: blur(26px) saturate(1.35);
+  box-shadow: var(--glass-inner-light), 0 12px 34px rgba(0, 0, 0, 0.32);
+}
+.character-detail.detail-pop { animation: detail-pop 300ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+@keyframes detail-pop {
+  from { opacity: 0.4; transform: translateY(5px) scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) { .character-detail.detail-pop { animation: none; } }
+
+.detail-face {
+  font-size: 34px;
+  line-height: 1.15;
+  flex-shrink: 0;
+  width: 74px; height: 74px;
+  display: grid;
+  place-items: center;
+  border-radius: 20px;
+  background: color-mix(in oklab, var(--char-accent, var(--accent)) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--char-accent, var(--accent)) 30%, transparent);
+}
+.detail-info { flex: 1; min-width: 0; }
+.detail-name-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.detail-name {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--label-primary);
+}
+.detail-family {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--char-accent, var(--accent)) 65%, white 20%);
+}
+.detail-craft {
+  margin: 2px 0 6px;
+  font-size: 12px;
+  color: var(--label-secondary);
+}
+.detail-blurb {
+  margin: 0 0 9px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--label-secondary);
+}
+.detail-traits { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+.trait-chip {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  color: var(--label-secondary);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+}
+.detail-sample {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  font-style: italic;
+  color: var(--label-tertiary);
+}
+.cast-btn { width: 100%; justify-content: center; }
+
+/* ─── Focus rings (HIG: visible keyboard focus everywhere) ─── */
+:is(button, input, [tabindex]):focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--accent) 70%, white 10%);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* ─── Typography tune: tighter display tracking ─── */
+.settings-group-title, .homespace-title {
+  letter-spacing: -0.022em;
+}
+
+/* ─── Settings rows on glass ─── */
+.settings-group {
+  background: var(--glass-regular);
+  border: 1px solid var(--glass-hairline);
+  border-radius: 16px;
+  padding: 14px 16px;
+  backdrop-filter: blur(20px) saturate(1.2);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+  box-shadow: var(--glass-inner-light);
+}
+.settings-group-title { color: var(--label-secondary); }
+.settings-name { color: var(--label-primary); }
+.settings-hint { color: var(--label-tertiary); }
+.settings-row { border-bottom-color: rgba(255, 255, 255, 0.05); }
+
+/* ─── Scrollbars — thin, glassy ─── */
+.homespace-body::-webkit-scrollbar { width: 8px; }
+.homespace-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.homespace-body::-webkit-scrollbar-thumb:hover { background-color: rgba(255, 255, 255, 0.2); }
+
+/* ─── Notch pill + HUD vs HomeSpace header ─── */
+/* The notch and HUD are ambient overlays for when the app window is NOT the
+ * focus surface. Inside HomeSpace they collide with the header buddy chip —
+ * and their phase info already lives in the conversation. Hide them.
+ * Same for onboarding: the intro bubble owns the top of the window. */
+body:has(.homespace) #notch-pill-root,
+body:has(.homespace) #hud,
+body:has(.onboarding) #notch-pill-root,
+body:has(.onboarding) #hud { display: none; }
+
+/* ─── Compact faces: never overflow their container ─── */
+.buddy-chip-face,
+.character-face,
+.detail-face {
+  white-space: nowrap;
+  overflow: hidden;
+  justify-content: center;
+  display: inline-flex;
+  align-items: center;
+}
+.character-face { font-size: 18px; }
+
+/* ─── Settings rows: predictable 2×2 grid, no more wrapped chaos ─── */
+.settings-row[data-provider] {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "name  badge"
+    "input input"
+    "actions actions";
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.settings-row[data-provider] .settings-name {
+  grid-area: name;
+  align-self: center;
+  font-weight: 600;
+}
+.settings-row[data-provider] .settings-badge {
+  grid-area: badge;
+  justify-self: end;
+  align-self: center;
+}
+.settings-row[data-provider] input[data-key-input] {
+  grid-area: input;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--glass-hairline);
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--label-primary);
+  font-size: 12.5px;
+  outline: none;
+  transition: border-color var(--t-fast), box-shadow var(--t-fast);
+}
+.settings-row[data-provider] input[data-key-input]:focus {
+  border-color: color-mix(in oklab, var(--accent) 55%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 16%, transparent);
+}
+.settings-row[data-provider] .settings-test,
+.settings-row[data-provider] .settings-status {
+  grid-area: actions;
+}
+.settings-row[data-provider] .settings-test { order: 4; }
+/* Actions row: Save / Remove / Test as one tidy line */
+.settings-row[data-provider] button {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid var(--glass-hairline);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--label-primary);
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background var(--t-fast), transform var(--t-fast), border-color var(--t-fast);
+}
+.settings-row[data-provider] button:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.settings-row[data-provider] button:active { transform: scale(0.96); }
+.settings-row[data-provider] .settings-row-actions {
+  grid-area: actions;
+  display: flex;
+  gap: 7px;
+}
+
+/* test/status text sits under the actions */
+.settings-row[data-provider] .settings-test {
+  font-size: 11px;
+  color: var(--label-tertiary);
+  align-self: center;
+}
+
+/* ─── Composer attach + send buttons hover ─── */
+.composer-attach { transition: transform var(--t-fast), opacity var(--t-fast); }
+.composer-attach:hover { transform: translateY(-1px); opacity: 1 !important; }
+
+/* ─── Chat area breathing room ─── */
+.conversation-transcript { padding-top: 4px; }

@@ -18,8 +18,10 @@ without ever leaving your workflow.
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%20v2-orange.svg)](https://tauri.app)
 [![Rust](https://img.shields.io/badge/backend-Rust-red.svg)](https://www.rust-lang.org)
 [![Windows](https://img.shields.io/badge/platform-Windows%2010%2B-0078d4.svg)](#)
+[![Linux](https://img.shields.io/badge/platform-Linux%20AppImage%20%2B%20deb-fcc624.svg)](#)
+[![Characters](https://img.shields.io/badge/buddies-16%20castable-8b5cf6.svg)](#)
 [![Tests](https://img.shields.io/badge/tests-31%20passing-brightgreen.svg)](#)
-[![Release](https://img.shields.io/badge/version-0.1.0-informational.svg)](#download)
+[![Release](https://img.shields.io/badge/version-0.2.0-informational.svg)](#download)
 
 <br />
 
@@ -37,7 +39,8 @@ without ever leaving your workflow.
 Tazama AI is a lightweight Windows desktop companion that:
 
 - **Watches your screen** — takes a screenshot on demand and understands what you're looking at
-- **Talks with you** — chat via text or voice using your own AI provider keys (Anthropic, OpenAI, Groq, NVIDIA, Fish Audio)
+- **Talks with you** — chat via text or voice using your own AI provider keys (Anthropic, OpenAI, Groq, NVIDIA, Z.ai, Fish Audio)
+- **Cast a buddy** — pick one of 16 characters and the whole app takes on their voice, colour and mood
 - **Remembers things** — built-in local memory store (SQLite + FTS5) that persists across sessions, no cloud required
 - **Shows you where to click** — annotates your screen with visual guides and can perform actions for you
 - **Stays out of the way** — transparent overlay window, click-through when idle, a tiny top-edge pill that grows on hover
@@ -169,14 +172,46 @@ You need at least one key. Start with Anthropic or Groq (both have generous free
 
 ### Accent colour
 
-Settings → Appearance → pick from 5 swatches. The accent drives the cursor caret, text selection, gel button tint, HUD chip colour, and the eye mascot's iris — all from one token (`--accent`).
+Five swatches in **Settings → Appearance** (blue, green, red, amber, purple).
+The accent drives the cursor, caret, selection highlight and gel buttons —
+casting a character overrides it with their signature colour.
 
-### Hotkey
+## Characters — cast your buddy
 
-Settings → Shortcuts → click **Change** on the global hotkey row → press your combination. The recorder shows live keycap chips and warns you about collisions with system shortcuts.
+Open **Characters** in the rail (or the buddy chip in the header). Search the
+cast, filter by family, hit **Cast this buddy** — and Tazama becomes that
+character: accent colour, name-tag greeting, starter prompts and the AI's
+speaking voice. **Surprise me** shuffles the deck. The cast persists across
+restarts; the Tazama classic eye restores the original personality.
 
----
+## Z.AI Local — chat with zero keys
 
+The `Z.AI Local` provider chats through the locally-authenticated
+`z-ai-web-dev-sdk` via a tiny OpenAI-compatible proxy. No API key required:
+
+```bash
+npm install            # installs the SDK (devDependency)
+node scripts/zai-proxy.mjs   # listens on 127.0.0.1:8788
+```
+
+Then in **Settings → AI Providers** press **Test** on the `Z.AI Local` row —
+the app picks it up automatically and chat works end to end.
+
+## Linux
+
+Tazama runs on Linux (X11/Wayland): same surfaces, screenshot capture via
+xcap, computer-use actions currently Windows-only. Sessions without a secret
+service (headless, CI) store provider keys in a 0600 file inside the app data
+directory instead of the keyring. Releases ship **AppImage** (run anywhere)
+and **deb** (Debian/Ubuntu) — grab them from the release page.
+
+Build from source on Linux:
+
+```bash
+sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libpipewire-0.3-dev \
+  libayatana-appindicator3-dev librsvg2-dev patchelf
+npm install && npm run tauri build
+```
 ## Memory
 
 Tazama AI has a built-in memory system powered by SQLite and FTS5 full-text search. Every conversation can be remembered, searched, and deleted — all stored locally.

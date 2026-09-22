@@ -236,6 +236,66 @@ jobs:
           }
         shell: pwsh
 
+      # ── 6b. Quiet the desktop ───────────────────────────────────────────
+      # The runner host console ("C:\ProgramData\GitHub\Host" JSON log spew)
+      # photobombs every screenshot. Minimize everything, then hide
+      # console-class windows so evidence shows ONLY the app.
+      # NOTE: P/Invoke signatures live on single lines — multi-line
+      # here-strings break the YAML block scalar.
+      - name: Quiet the desktop (hide runner console)
+        run: |
+          $ErrorActionPreference = "Continue"
+          # 1. Minimize every window (taskbar keeps them reachable, off-screen)
+          try { (New-Object -ComObject Shell.Application).MinimizeAll() } catch {
+            Write-Host "MinimizeAll failed (non-fatal): $_"
+          }
+          Start-Sleep -Seconds 1
+          # 2. Sweep ALL top-level windows and hide console-class ones
+          #    (ConsoleWindowClass = classic console, CASCADIA_* = Terminal).
+          try {
+            $sig = '[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int n); ' +
+                   '[DllImport("user32.dll")] public static extern bool EnumWindows(QP f, IntPtr l); ' +
+                   'public delegate bool QP(IntPtr h, IntPtr l); ' +
+                   '[DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h); ' +
+                   '[DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr h, System.Text.StringBuilder s, int m); ' +
+                   '[DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, System.Text.StringBuilder s, int m);'
+            Add-Type -Namespace Native -Name QuietWin -MemberDefinition $sig
+            $hidden = 0
+            $cb = [Native.QuietWin+QP]{
+              param($hWnd, $lParam)
+              if (-not [Native.QuietWin]::IsWindowVisible($hWnd)) { return $true }
+              $cls = New-Object System.Text.StringBuilder 256
+              [void][Native.QuietWin]::GetClassName($hWnd, $cls, 256)
+              $title = New-Object System.Text.StringBuilder 256
+              [void][Native.QuietWin]::GetWindowText($hWnd, $title, 256)
+              $c = $cls.ToString(); $t = $title.ToString()
+              $isConsole = $c -in @('ConsoleWindowClass', 'CASCADIA_HOSTING_WINDOW_CLASS')
+              $isRunner  = ($t -match 'GitHub') -and ($t -notmatch 'Tazama')
+              if ($isConsole -or $isRunner) {
+                [void][Native.QuietWin]::ShowWindow($hWnd, 0)  # SW_HIDE
+                $script:hidden++
+              }
+              return $true
+            }
+            [void][Native.QuietWin]::EnumWindows($cb, [IntPtr]::Zero)
+            Write-Host "Hid $hidden console/runner window(s)."
+          } catch { Write-Host "Console hide failed (non-fatal): $_" }
+          # 3. Restore + re-raise Tazama (MinimizeAll minimized it too).
+          Start-Sleep -Milliseconds 800
+          try {
+            $tazama = Get-Process | Where-Object { $_.ProcessName -like "*azama*" -and $_.MainWindowHandle -ne 0 } | Select-Object -First 1
+            if ($tazama) {
+              $sig2 = '[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int n); ' +
+                      '[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);'
+              Add-Type -Namespace Native -Name FocusWin -MemberDefinition $sig2
+              [Native.FocusWin]::ShowWindow($tazama.MainWindowHandle, 9) | Out-Null   # SW_RESTORE
+              Start-Sleep -Milliseconds 300
+              [Native.FocusWin]::SetForegroundWindow($tazama.MainWindowHandle) | Out-Null
+              Write-Host "Tazama restored + focused after desktop quiet."
+            }
+          } catch { Write-Host "Refocus failed (non-fatal): $_" }
+        shell: pwsh
+
       # ── 7. UIA drive (best-effort, never fatal) ─────────────────────────
       # Walk the app's accessibility tree and invoke buttons by name so the
       # evidence covers onboarding → HomeSpace → Settings → AI Providers.

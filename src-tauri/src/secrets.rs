@@ -19,11 +19,62 @@
 //! (same service/account strings via [`account_for`], same `Ok(..ok())`
 //! folding) without constructing an `App`.
 
-use tauri::{AppHandle, Runtime};
+use tauri::{AppHandle, Manager, Runtime};
 use tauri_plugin_keyring::KeyringExt;
 
 /// Production keyring service for Tazama AI secrets.
 pub const KEYRING_SERVICE: &str = "com.tazamaai.app";
+
+/// Linux fallback store: some Linux sessions ship without a secret service
+/// (no gnome-keyring/kwallet, headless X, CI runners). Keys then live in a
+/// 0600-permission JSON file inside the app-data dir instead of dying with
+/// "SecretService unavailable". Windows/macOS always use the real keyring.
+fn fallback_file<R: Runtime>(app: &AppHandle<R>) -> Option<std::path::PathBuf> {
+    #[cfg(windows)]
+    {
+        let _ = app;
+        None
+    }
+    #[cfg(not(windows))]
+    {
+        app.path()
+            .app_data_dir()
+            .ok()
+            .map(|d| d.join("fallback-keys.json"))
+    }
+}
+
+fn fallback_read<R: Runtime>(app: &AppHandle<R>, provider: &str) -> Option<String> {
+    let path = fallback_file(app)?;
+    let raw = std::fs::read_to_string(path).ok()?;
+    let parsed: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    parsed.get(provider)?.as_str().map(str::to_owned)
+}
+
+fn fallback_write<R: Runtime>(app: &AppHandle<R>, provider: &str, key: Option<&str>) -> Result<(), String> {
+    let Some(path) = fallback_file(app) else {
+        return Err("no fallback key store on this platform".into());
+    };
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    let mut map: std::collections::BTreeMap<String, String> = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_default();
+    match key {
+        Some(k) => { map.insert(provider.to_owned(), k.to_owned()); }
+        None => { map.remove(provider); }
+    }
+    let body = serde_json::to_string(&map).map_err(|e| e.to_string())?;
+    std::fs::write(&path, body).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    }
+    Ok(())
+}
 
 /// Keyring account for a provider name.
 fn account_for(provider: &str) -> String {
@@ -71,9 +122,20 @@ fn set_with_service<R: Runtime>(
     provider: &str,
     key: &str,
 ) -> Result<(), String> {
-    app.keyring()
+    match app.keyring()
         .set_password(service, &account_for(provider), key)
         .map_err(|e| e.to_string())
+    {
+        Ok(()) => Ok(()),
+        Err(ring_err) => {
+            // Linux without a secret service: degrade to the file store.
+            if fallback_write(app, provider, Some(key)).is_ok() {
+                Ok(())
+            } else {
+                Err(ring_err)
+            }
+        }
+    }
 }
 
 fn read_with_service<R: Runtime>(
@@ -89,7 +151,18 @@ fn has_with_service<R: Runtime>(
     service: &str,
     provider: &str,
 ) -> Result<bool, String> {
-    map_lookup_to_has(get_lookup_with_service(app, service, provider))
+    match map_lookup_to_has(get_lookup_with_service(app, service, provider)) {
+        Ok(has) => Ok(has),
+        Err(ring_err) => {
+            // Keyring backend unavailable (e.g. no secret service on Linux):
+            // report from the fallback store instead of failing.
+            if fallback_file(app).is_some() {
+                Ok(fallback_read(app, provider).is_some())
+            } else {
+                Err(ring_err)
+            }
+        }
+    }
 }
 
 fn remove_with_service<R: Runtime>(
@@ -97,9 +170,24 @@ fn remove_with_service<R: Runtime>(
     service: &str,
     provider: &str,
 ) -> Result<(), String> {
-    app.keyring()
+    match app
+        .keyring()
         .delete_password(service, &account_for(provider))
         .map_err(|e| e.to_string())
+    {
+        Ok(()) => {
+            // Also clear any fallback entry so remove is always total.
+            let _ = fallback_write(app, provider, None);
+            Ok(())
+        }
+        Err(ring_err) => {
+            if fallback_file(app).is_some() {
+                fallback_write(app, provider, None)
+            } else {
+                Err(ring_err)
+            }
+        }
+    }
 }
 
 // NOTE: `<R: Runtime>` generics are required because Tauri v2's `AppHandle`
@@ -124,10 +212,17 @@ pub fn key_remove<R: Runtime>(app: AppHandle<R>, provider: String) -> Result<(),
     remove_with_service(&app, KEYRING_SERVICE, &provider)
 }
 
-/// Read a provider key from the OS keyring (Task 5 consumes verbatim).
+/// Read a provider key from the OS keyring, falling back to the Linux file
+/// store when the keyring backend is unavailable (Task 5 consumes verbatim).
 #[allow(dead_code)] // consumed by Task 5; tests never read the prod service
 pub(crate) fn read_key<R: Runtime>(app: &AppHandle<R>, provider: &str) -> Result<String, String> {
-    read_with_service(app, KEYRING_SERVICE, provider)
+    match read_with_service(app, KEYRING_SERVICE, provider) {
+        Ok(key) => Ok(key),
+        Err(ring_err) => match fallback_read(app, provider) {
+            Some(key) => Ok(key),
+            None => Err(ring_err),
+        },
+    }
 }
 
 /// Persist a provider key (Ruling R6; Task 6 consumes; same write path as
@@ -211,6 +306,9 @@ mod tests {
         );
     }
 
+    // Windows-only: needs a live Credential Manager. Linux CI has no secret
+    // service daemon, and Linux prod falls back to the file store instead.
+    #[cfg(windows)]
     #[test]
     fn keyring_roundtrip_under_test_prefix() {
         // Drop residue from an earlier aborted run so the test is repeatable.

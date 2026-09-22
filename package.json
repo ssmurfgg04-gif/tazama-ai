@@ -1,7 +1,7 @@
 {
   "name": "tazama-ai",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -16,10 +16,11 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
+    "typescript": "~6.0.3",
     "vite": "^8.0.16",
-    "typescript": "~6.0.3"
+    "z-ai-web-dev-sdk": "^0.0.18"
   },
-  "description": "Your screen buddy that watches along \u2014 Windows companion built with Tauri v2 + Rust",
+  "description": "Your screen buddy that watches along — Windows companion built with Tauri v2 + Rust",
   "author": "ssmurfgg04-gif",
   "license": "MIT",
   "engines": {
