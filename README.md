@@ -328,55 +328,15 @@ tazama-ai/
 
 ---
 
-## SmartScreen & Code Signing
+## SmartScreen
 
-### For users downloading a release build
+When you download and run Tazama AI, Windows may show a blue **"Windows protected your PC"** dialog. This is normal for any new app that hasn't yet built up reputation with Microsoft's SmartScreen filter.
 
-If Windows shows **"Windows protected your PC"** — click **More info → Run anyway**.
+**To run it:**
+1. Click **"More info"**
+2. Click **"Run anyway"**
 
-This happens because the installer is currently unsigned. Every line of Rust and TypeScript is auditable in this repository. The GitHub Actions CI pipeline builds the exact binary you download — no extra steps, no hidden code.
-
-### Permanent fix (for maintainers)
-
-The CI pipeline has three signing options wired in `.github/workflows/release.yml`. Set the matching GitHub Secrets and every release signs automatically.
-
-**Option A — SignPath.io (free for open source, recommended first)**
-
-1. Apply at [signpath.io/open-source](https://about.signpath.io/product/open-source) — they verify your repo, approval takes 1–3 days
-2. Add two GitHub Secrets:
-
-| Secret | Value |
-|---|---|
-| `SIGNPATH_API_TOKEN` | From SignPath dashboard |
-| `SIGNPATH_ORG_ID` | Your SignPath organisation ID |
-
-**Option B — Azure Trusted Signing (~$9/month, instant SmartScreen reputation)**
-
-Microsoft's own cloud signing service — no physical USB token, EV-equivalent reputation from the first download.
-
-1. Create a [Trusted Signing account](https://learn.microsoft.com/en-us/azure/trusted-signing/quickstart) in Azure Portal
-2. Create a certificate profile (choose **Public Trust**)
-3. Create an App Registration with the `Trusted Signing Certificate Profile Signer` role
-4. Add six GitHub Secrets:
-
-| Secret | Value |
-|---|---|
-| `AZURE_TENANT_ID` | Directory (tenant) ID |
-| `AZURE_CLIENT_ID` | Application (client) ID |
-| `AZURE_CLIENT_SECRET` | Client secret value |
-| `AZURE_CS_ENDPOINT` | `https://<region>.codesigning.azure.net` |
-| `AZURE_CS_ACCOUNT` | Trusted Signing account name |
-| `AZURE_CS_PROFILE` | Certificate profile name |
-
-**Option C — Certum EV cloud HSM (~$90/year, no USB token)**
-
-[Certum Open Source Code Signing](https://certum.eu) stores the EV key on their HSM — no physical token required. Good alternative if you prefer a traditional CA.
-
-Set secret: `CERTUM_HSM_PIN`
-
----
-
-Once any signing option is active, Windows SmartScreen clears immediately and users see no warning at all.
+That's it — Tazama AI is fully open source. Every line of Rust and TypeScript is auditable in this repository. The GitHub Actions CI pipeline builds the exact binary you download — no hidden code, no extra steps.
 
 ---
 
