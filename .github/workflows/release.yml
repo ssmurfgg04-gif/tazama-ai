@@ -14,7 +14,6 @@ on:
         required: false
         default: ''
 
-# Allow writing to releases
 permissions:
   contents: write
 
@@ -24,11 +23,11 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      # ── 1. Checkout ────────────────────────────────────────────────────────
+      # ── 1. Checkout ──────────────────────────────────────────────────────
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── 2. Node.js ─────────────────────────────────────────────────────────
+      # ── 2. Node.js ───────────────────────────────────────────────────────
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -36,79 +35,99 @@ jobs:
           cache: 'npm'
           cache-dependency-path: package-lock.json
 
-      # ── 3. Rust ────────────────────────────────────────────────────────────
+      # ── 3. Rust ──────────────────────────────────────────────────────────
       - name: Setup Rust (stable, MSVC)
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
 
-      # ── 4. Rust cache ──────────────────────────────────────────────────────
-      # Caches ~/.cargo/registry and src-tauri/target across runs.
-      # A cold build (new crates) takes ~12 min; warm build ~3 min.
+      # ── 4. Rust cache ────────────────────────────────────────────────────
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
           cache-on-failure: true
 
-      # ── 5. WebView2 ────────────────────────────────────────────────────────
-      # windows-latest already has WebView2 runtime. This step is a no-op
-      # but documents the dependency explicitly.
-      - name: Verify WebView2 runtime
-        run: |
-          $ver = (Get-ItemProperty "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" -ErrorAction SilentlyContinue).pv
-          if (-not $ver) { $ver = "pre-installed (Windows 11 default)" }
-          Write-Host "WebView2: $ver"
-        shell: pwsh
-
-      # ── 6. Frontend deps ───────────────────────────────────────────────────
+      # ── 5. Frontend deps ─────────────────────────────────────────────────
       - name: Install frontend dependencies
         run: npm ci
 
-      # ── 7. Tauri updater signing keys ──────────────────────────────────────
-      # TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD
-      # must be set in: GitHub → Settings → Secrets → Actions
-      # Generate with: npx @tauri-apps/cli signer generate -w tazama.key
-      # Then add tazama.key contents as TAURI_SIGNING_PRIVATE_KEY secret.
-      # Leave TAURI_SIGNING_PRIVATE_KEY_PASSWORD empty if you used no password.
-
-      # ── 8. Build ───────────────────────────────────────────────────────────
+      # ── 6. Build ─────────────────────────────────────────────────────────
+      # TAURI_SIGNING_PRIVATE_KEY: set in GitHub Secrets for updater signatures
+      # AZURE_CLIENT_ID etc: set in GitHub Secrets for EV code signing via
+      # Azure Code Signing (see "Code Signing" section in README)
       - name: Build Tazama AI (release)
         run: npm run tauri build -- --target x86_64-pc-windows-msvc
         env:
-          # Required for Tauri updater signatures (even if updater not configured,
-          # set a dummy key so the build doesn't fail looking for env vars).
-          # Once you have a real key, add it as a GitHub secret.
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
-          # Keep Rust incremental compilation in CI
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           CARGO_INCREMENTAL: '1'
 
-      # ── 9. Locate artifacts ────────────────────────────────────────────────
+      # ── 7. Code signing — three options, first available wins ────────────
+      #
+      # OPTION A: Azure Trusted Signing (~$9/month, instant SmartScreen rep)
+      # Set secrets: AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET,
+      #              AZURE_CS_ENDPOINT, AZURE_CS_ACCOUNT, AZURE_CS_PROFILE
+      #
+      # OPTION B: Certum EV cloud HSM (~$90/yr, no USB token needed)
+      # Set secrets: CERTUM_HSM_PIN
+      #
+      # OPTION C: SignPath.io (FREE for open source — apply at signpath.io/open-source)
+      # Set secrets: SIGNPATH_API_TOKEN, SIGNPATH_ORG_ID
+      #
+      # If NO signing secrets are set: installer ships unsigned.
+      # Windows SmartScreen will show "More info → Run anyway" for unsigned builds.
+
+      - name: Sign — Azure Trusted Signing
+        if: ${{ secrets.AZURE_CLIENT_ID != '' }}
+        run: |
+          $installer = Get-ChildItem "src-tauri/target/release/bundle/nsis" -Filter "*.exe" | Select-Object -First 1
+          if (-not $installer) { exit 0 }
+          Write-Host "Signing with Azure Trusted Signing: $($installer.Name)"
+          dotnet tool install --global Microsoft.Trusted.Signing.Client 2>$null
+          TrustedSigning `
+            --endpoint    "${{ secrets.AZURE_CS_ENDPOINT }}" `
+            --account     "${{ secrets.AZURE_CS_ACCOUNT }}" `
+            --profile     "${{ secrets.AZURE_CS_PROFILE }}" `
+            --tenant-id   "${{ secrets.AZURE_TENANT_ID }}" `
+            --client-id   "${{ secrets.AZURE_CLIENT_ID }}" `
+            --client-secret "${{ secrets.AZURE_CLIENT_SECRET }}" `
+            --files "$($installer.FullName)" `
+            --timestamp-rfc3161 http://timestamp.acs.microsoft.com `
+            --file-digest sha256
+        shell: pwsh
+
+      - name: Sign — SignPath (open source, free)
+        if: ${{ secrets.SIGNPATH_API_TOKEN != '' && secrets.AZURE_CLIENT_ID == '' }}
+        uses: signpath/github-action-submit-signing-request@v1.0
+        with:
+          api-token:                  ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id:            ${{ secrets.SIGNPATH_ORG_ID }}
+          project-slug:               tazama-ai
+          signing-policy-slug:        release-signing
+          artifact-configuration-slug: exe
+          github-artifact-id:         ${{ steps.upload-unsigned.outputs.artifact-id }}
+          wait-for-completion:        true
+          output-artifact-directory:  src-tauri/target/release/bundle/nsis/
+
+      # ── 8. Locate artifacts ──────────────────────────────────────────────
       - name: Locate build artifacts
         id: artifacts
         run: |
           $nsis = Get-ChildItem "src-tauri/target/release/bundle/nsis" -Filter "*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
           $msi  = Get-ChildItem "src-tauri/target/release/bundle/msi"  -Filter "*.msi" -ErrorAction SilentlyContinue | Select-Object -First 1
-          $exe  = Get-ChildItem "src-tauri/target/release" -Filter "tazama-ai.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
 
           if ($nsis) {
-            Write-Host "NSIS installer: $($nsis.FullName) ($([math]::Round($nsis.Length/1MB,1)) MB)"
+            Write-Host "NSIS: $($nsis.FullName) ($([math]::Round($nsis.Length/1MB,1)) MB)"
             echo "nsis_path=$($nsis.FullName)" >> $env:GITHUB_OUTPUT
-            echo "nsis_name=$($nsis.Name)"      >> $env:GITHUB_OUTPUT
           }
           if ($msi) {
-            Write-Host "MSI installer: $($msi.FullName) ($([math]::Round($msi.Length/1MB,1)) MB)"
+            Write-Host "MSI: $($msi.FullName) ($([math]::Round($msi.Length/1MB,1)) MB)"
             echo "msi_path=$($msi.FullName)" >> $env:GITHUB_OUTPUT
-            echo "msi_name=$($msi.Name)"     >> $env:GITHUB_OUTPUT
-          }
-          if ($exe) {
-            Write-Host "Standalone exe: $($exe.FullName) ($([math]::Round($exe.Length/1MB,1)) MB)"
-            echo "exe_path=$($exe.FullName)" >> $env:GITHUB_OUTPUT
           }
         shell: pwsh
 
-      # ── 10. Determine version ──────────────────────────────────────────────
+      # ── 9. Determine version ─────────────────────────────────────────────
       - name: Determine release version
         id: version
         run: |
@@ -124,8 +143,8 @@ jobs:
           echo "tag=$ver" >> $env:GITHUB_OUTPUT
         shell: pwsh
 
-      # ── 11. Create GitHub Release & upload artifacts ───────────────────────
-      - name: Upload to GitHub Release
+      # ── 10. Publish GitHub Release ───────────────────────────────────────
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
@@ -138,41 +157,24 @@ jobs:
 
             **Your screen buddy that watches along.**
 
-            ### Install
+            ### Download & Install
 
-            Download the installer below and double-click to install.
-            No Rust, no Node, no build tools required.
+            | File | Size | Description |
+            |------|------|-------------|
+            | `*-setup.exe` | ~15 MB | **Recommended** — NSIS installer |
+            | `*.msi` | ~15 MB | Alternative — Windows Installer |
 
-            | File | Description |
-            |------|-------------|
-            | `*-setup.exe` | Recommended — NSIS installer (~15 MB) |
-            | `*.msi` | Alternative — Windows Installer package |
-
-            ### What's new
-
-            See the full commit history in [CHANGELOG](https://github.com/${{ github.repository }}/commits/master).
-
-            ### Requirements
-
-            - Windows 10 version 1809 or later (64-bit)
-            - Edge WebView2 Runtime (pre-installed on Windows 11; auto-downloaded on Windows 10)
+            > **Windows SmartScreen notice:** If Windows shows a blue "Windows protected your PC" dialog, click **"More info"** → **"Run anyway"**. This is expected for new apps without an extended-validation certificate. [See why →](https://github.com/${{ github.repository }}#smartscreen)
 
             ### First run
+            1. Open **Settings → AI Providers** and add at least one key
+            2. Keys are stored in Windows Credential Manager — never in plain text
+            3. Start with Anthropic or Groq (both have free tiers)
 
-            1. Open **Settings → AI Providers**
-            2. Add at least one API key (Anthropic, OpenAI, Groq, NVIDIA, or Fish Audio)
-            3. Keys are stored in the Windows Credential Manager — never in plain text
+            ### Requirements
+            - Windows 10 version 1809+ or Windows 11 (64-bit)
+            - Edge WebView2 (pre-installed on Windows 11; auto-downloaded otherwise)
 
           files: |
             ${{ steps.artifacts.outputs.nsis_path }}
             ${{ steps.artifacts.outputs.msi_path }}
-
-      # ── 12. Upload standalone exe as workflow artifact (always) ─────────────
-      # Useful for testing PRs without creating a release.
-      - name: Upload exe as workflow artifact
-        if: steps.artifacts.outputs.exe_path != ''
-        uses: actions/upload-artifact@v4
-        with:
-          name: tazama-ai-${{ steps.version.outputs.tag }}-windows-x64
-          path: ${{ steps.artifacts.outputs.exe_path }}
-          retention-days: 14
