@@ -19,7 +19,9 @@
 //! (same service/account strings via [`account_for`], same `Ok(..ok())`
 //! folding) without constructing an `App`.
 
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Runtime};
+#[cfg(not(windows))]
+use tauri::Manager; // app.path() — Linux fallback file store only
 use tauri_plugin_keyring::KeyringExt;
 
 /// Production keyring service for Tazama AI secrets.
