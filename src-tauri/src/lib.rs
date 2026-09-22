@@ -2,6 +2,7 @@ use std::sync::Mutex;
 use tauri::Manager;
 
 mod caps;
+mod providers;
 mod secrets;
 
 #[derive(Default)]
@@ -22,7 +23,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             secrets::key_set,
             secrets::key_has,
-            secrets::key_remove
+            secrets::key_remove,
+            providers::chat_complete,
+            providers::key_test,
+            providers::transcribe,
+            providers::speak
         ])
         .run(tauri::generate_context!())
         .expect("error while running Peek");
