@@ -149,44 +149,62 @@ jobs:
           }
           Start-Sleep -Seconds 3
 
-          # Locate the installed exe (search breadth: per-user first, then machine)
-          $candidates = @(
-            "$env:LOCALAPPDATA\Programs",
-            "$env:LOCALAPPDATA",
-            "${env:ProgramFiles}",
-            "${env:ProgramFiles(x86)}"
-          )
-          $exe = $null
-          foreach ($root in $candidates) {
-            if (-not (Test-Path $root)) { continue }
-            $hit = Get-ChildItem $root -Recurse -Filter "Tazama AI.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($hit) { $exe = $hit; break }
+          # Locate the installed exe. Registry uninstall key FIRST (fast and
+          # authoritative — NSIS writes InstallLocation, but it is stored
+          # QUOTED, e.g. "C:\Users\...\Tazama AI", so trim quotes). Fall back
+          # to targeted dirs, then a name-tolerant recursive sweep.
+          function Find-AppExe([string]$dir) {
+            if (-not $dir -or -not (Test-Path $dir)) { return $null }
+            # Any exe that is not the uninstaller helper.
+            $hit = Get-ChildItem $dir -Filter "*.exe" -ErrorAction SilentlyContinue |
+                   Where-Object { $_.Name -notlike "uninstall*" } | Select-Object -First 1
+            if ($hit) { return $hit }
+            return $null
           }
-          # Registry fallback (NSIS writes an uninstall key with InstallLocation)
-          if (-not $exe) {
-            $keys = @(
-              "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall",
-              "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall",
-              "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
-            )
-            foreach ($k in $keys) {
-              if (-not (Test-Path $k)) { continue }
-              $props = Get-ChildItem $k -ErrorAction SilentlyContinue | ForEach-Object { Get-ItemProperty $_.PSPath } |
-                       Where-Object { $_.DisplayName -like "Tazama AI*" }
-              foreach ($pp in $props) {
-                Write-Host "Uninstall key: $($pp.DisplayName) $($pp.DisplayVersion) @ $($pp.InstallLocation)"
-                if ($pp.InstallLocation) {
-                  $hit = Get-ChildItem $pp.InstallLocation -Filter "*.exe" -ErrorAction SilentlyContinue |
-                         Where-Object { $_.Name -like "*azama*" } | Select-Object -First 1
-                  if ($hit) { $exe = $hit; break }
-                }
+
+          $exe = $null
+          $keys = @(
+            "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall",
+            "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall",
+            "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
+          )
+          foreach ($k in $keys) {
+            if ($exe -or -not (Test-Path $k)) { continue }
+            $props = Get-ChildItem $k -ErrorAction SilentlyContinue | ForEach-Object { Get-ItemProperty $_.PSPath } |
+                     Where-Object { $_.DisplayName -like "Tazama AI*" }
+            foreach ($pp in $props) {
+              $loc = "$($pp.InstallLocation)".Trim('"').Trim()
+              Write-Host "Uninstall key: $($pp.DisplayName) $($pp.DisplayVersion) @ $loc"
+              if (Test-Path $loc) {
+                Write-Host "Install dir contents:"
+                Get-ChildItem $loc | Format-Table Name, Length -AutoSize | Out-Host
               }
+              $exe = Find-AppExe $loc
+              if (-not $exe -and (Test-Path "$loc\bin")) { $exe = Find-AppExe "$loc\bin" }
+            }
+          }
+          # Targeted dirs fallback (per-user NSIS default install roots)
+          if (-not $exe) {
+            foreach ($dir in @(
+              "$env:LOCALAPPDATA\Tazama AI",
+              "$env:LOCALAPPDATA\Programs\Tazama AI",
+              "${env:ProgramFiles}\Tazama AI",
+              "${env:ProgramFiles(x86)}\Tazama AI"
+            )) {
+              $exe = Find-AppExe $dir
               if ($exe) { break }
             }
           }
+          # Last resort: bounded recursive sweep for anything Tazama-ish.
           if (-not $exe) {
-            Write-Host "::error::Installed 'Tazama AI.exe' not found anywhere."
-            Get-ChildItem "$env:LOCALAPPDATA\Programs" -ErrorAction SilentlyContinue | Out-Host
+            Write-Host "Falling back to recursive sweep of LOCALAPPDATA\Programs …"
+            $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter "*azama*.exe" -ErrorAction SilentlyContinue |
+                   Where-Object { $_.Name -notlike "uninstall*" } | Select-Object -First 1
+          }
+          if (-not $exe) {
+            Write-Host "::error::Installed Tazama exe not found anywhere."
+            Get-ChildItem "$env:LOCALAPPDATA" -Directory -ErrorAction SilentlyContinue |
+              Where-Object Name -like "*azama*" | Format-Table Name -AutoSize | Out-Host
             exit 1
           }
           Write-Host "Installed exe: $($exe.FullName)"
