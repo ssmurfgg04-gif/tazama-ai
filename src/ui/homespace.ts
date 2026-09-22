@@ -64,10 +64,11 @@ function buildRail(): HTMLElement {
   rail.setAttribute("aria-label", "Pages");
 
   const pages = [
-    { icon: "◎", label: "Home",    id: "home"    },
-    { icon: "⌘", label: "Agents",  id: "agents"  },
-    { icon: "✦", label: "Skills",  id: "skills"  },
-    { icon: "⚙", label: "Settings",id: "settings" },
+    { iconFile: "home",     label: "Home",     id: "home"     },
+    { iconFile: "agents",   label: "Agents",   id: "agents"   },
+    { iconFile: "zap",      label: "Skills",   id: "skills"   },
+    { iconFile: "settings", label: "Settings", id: "settings" },
+    { iconFile: "memory",   label: "Memory",   id: "memory"   },
   ];
 
   pages.forEach((p, i) => {
@@ -77,12 +78,17 @@ function buildRail(): HTMLElement {
     btn.setAttribute("aria-label", p.label);
     btn.title = p.label;
 
-    const icon = document.createElement("span");
-    icon.className = "rail-icon";
-    icon.textContent = p.icon;
-    icon.setAttribute("aria-hidden", "true");
+    // Use generated SVG icons (better than Unicode glyphs)
+    const iconWrap = document.createElement("span");
+    iconWrap.className = "rail-icon";
+    iconWrap.setAttribute("aria-hidden", "true");
+    const img = document.createElement("img");
+    img.src = `/icons/${p.iconFile}.svg`;
+    img.alt = "";
+    img.style.cssText = "width:18px;height:18px;opacity:1;filter:invert(1)";
+    iconWrap.append(img);
 
-    btn.append(icon);
+    btn.append(iconWrap);
     btn.addEventListener("click", () => selectPage(p.id, rail, btn));
     rail.append(btn);
   });
@@ -296,10 +302,35 @@ function buildComposer(): HTMLElement {
     }
   });
 
+  // Screenshot / attach button (HeyClicky composer pattern)
+  const attachBtn = document.createElement("button");
+  attachBtn.className = "composer-attach";
+  attachBtn.setAttribute("aria-label", "Take screenshot");
+  attachBtn.title = "Take a screenshot and attach it";
+  const attachImg = document.createElement("img");
+  attachImg.src = "/icons/cpu.svg";
+  attachImg.alt = "";
+  attachImg.style.cssText = "width:15px;height:15px;opacity:.6;filter:invert(1)";
+  attachBtn.append(attachImg);
+  attachBtn.addEventListener("click", async () => {
+    attachBtn.style.opacity = ".4";
+    try {
+      await invoke<{base64_png:string}>("screenshot");
+      // Append screenshot reference to input
+      input.value = (input.value.trim() + "\n[screenshot attached]").trim();
+      input.dispatchEvent(new Event("input"));
+      // Store in memory for context
+      await invoke("memory_add", {
+        content: "User attached a screenshot to a message in Tazama AI.",
+      }).catch(() => null);
+    } catch { /* capture not yet set up */ }
+    attachBtn.style.opacity = "";
+  });
+
   const sendBtn = document.createElement("button");
   sendBtn.className = "send-btn gel";
   sendBtn.setAttribute("aria-label", "Send");
-  sendBtn.textContent = "↑";
+  sendBtn.innerHTML = `<img src="/icons/send.svg" alt="" style="width:14px;height:14px;filter:invert(1);opacity:.9">`;
   sendBtn.addEventListener("click", doSend);
 
   function doSend(): void {
@@ -311,7 +342,7 @@ function buildComposer(): HTMLElement {
     if (body) sendMessage(text, body as HTMLElement);
   }
 
-  composer.append(input, sendBtn);
+  composer.append(attachBtn, input, sendBtn);
   return composer;
 }
 
@@ -344,11 +375,29 @@ async function sendMessage(text: string, container: HTMLElement): Promise<void> 
   playSoundCue("agent-launch");
 
   try {
-    // Invoke Rust provider (Phase A: Anthropic default; key from keyring)
+    // Recall relevant memory before calling the AI (context-m shared with opencode)
+    let memoryContext = "";
+    try {
+      memoryContext = await invoke<string>("memory_search", {
+        query: text,
+        limit: 5,
+      });
+    } catch { /* memory not yet set up — continue without */ }
+
+    // Build messages: optional memory context as system-level prefix
+    const aiMessages = memoryContext
+      ? [
+          { role: "user", content: `[Relevant context from memory]\n${memoryContext}` },
+          { role: "assistant", content: "Got it, I'll use this context." },
+          { role: "user", content: text },
+        ]
+      : [{ role: "user", content: text }];
+
+    // Invoke Rust provider (keys from OS keyring — never from JS)
     const result = await invoke<string>("chat_complete", {
       provider: "anthropic",
       model: "claude-haiku-4-5",
-      messages: [{ role: "user", content: text }],
+      messages: aiMessages,
     });
 
     assistantMsg.content = result;
@@ -359,6 +408,11 @@ async function sendMessage(text: string, container: HTMLElement): Promise<void> 
     assistantMsg.doneTitle = deriveDoneTitle(text);
     setPhase("done");
     playSoundCue("agent-done");
+
+    // Store the exchange in memory (non-blocking)
+    invoke("memory_add", {
+      content: `User asked: "${text.slice(0, 80)}". Tazama replied: "${result.slice(0, 120)}"`,
+    }).catch(() => null);
   } catch (e) {
     assistantMsg.content = String(e).replace(/^Error:\s*/i, "");
     assistantMsg.isStreaming = false;

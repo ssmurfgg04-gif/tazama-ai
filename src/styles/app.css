@@ -403,7 +403,7 @@
   position: relative;
 }
 
-.hud-label { font-weight: 500; }
+.hud-label { font-family: var(--font-companion); font-weight: 600; }
 
 .hud-summary {
   font-size: var(--fs-secondary);
@@ -715,3 +715,186 @@
 }
 .accent-swatch:hover { transform: scale(1.15); }
 .accent-swatch.is-active { border-color: var(--n12); box-shadow: 0 0 0 1px var(--n7); }
+
+/* ════════════════════════════════════════════
+   UI POLISH — pointer cursors, hover accents,
+   GPU hints, scroll quality (Round 3)
+   Closes the 8-point gap vs HeyClicky UI audit.
+   ════════════════════════════════════════════ */
+
+/* 1. Pointer cursor on every interactive element ─────────────────────── */
+/* HeyClicky: clickySettingsHover(showsPointer: true) on every row       */
+.suggested-card,
+.rail-row,
+.send-btn,
+.gel,
+.header-btn,
+.tapback-btn,
+.cowork-expand-btn,
+.cowork-copy-btn,
+.suggestion-accept,
+.suggestion-snooze,
+.suggestion-useless,
+.perm-cta,
+.hotkey-record-btn,
+.orbit-tile,
+.powerup-find-btn,
+.muted-restore-btn,
+.notch-dismiss-clock,
+.hud-dismiss,
+.hud-approve-btn,
+.context-menu-item,
+.accent-swatch,
+.settings-toggle {
+  cursor: pointer;
+}
+
+/* 2. Left-border accent flash on interactive rows ─────────────────────── */
+/* HeyClicky's row hover has a 2px left accent border that appears on hover */
+.suggested-card {
+  border-left: 2px solid transparent;
+  padding-left: calc(var(--sp-4) - 2px); /* compensate for border */
+  transition: background var(--t-fast), border-color var(--t-fast),
+              border-left-color var(--t-fast), transform var(--t-fast);
+}
+.suggested-card:hover {
+  border-left-color: var(--accent);
+}
+
+.settings-row {
+  border-left: 2px solid transparent;
+  padding-left: calc(var(--sp-4) - 2px);
+  transition: border-left-color var(--t-fast), background var(--t-fast);
+}
+.settings-row:hover {
+  border-left-color: color-mix(in oklab, var(--accent) 40%, transparent);
+  background: var(--n2);
+}
+
+/* 3. GPU will-change on animated elements ─────────────────────────────── */
+.skeleton,
+.breathing-dot,
+.typing-dot,
+.hud-dot,
+.hud-bar,
+.orbit-tile,
+.constellation-portrait,
+.badge-pop,
+.tapback-pop {
+  will-change: transform, opacity;
+}
+/* Remove will-change after animation completes to free GPU layer */
+.entrance-stagger.done { will-change: auto; }
+
+/* 4. Scrollbar quality + layout stability ──────────────────────────────── */
+.homespace-body {
+  scrollbar-gutter: stable; /* prevent layout shift when scrollbar appears */
+  scrollbar-width: thin;
+  scrollbar-color: var(--n5) transparent;
+}
+/* WebKit/Blink (WebView2) scrollbar overrides */
+.homespace-body::-webkit-scrollbar       { width: 5px; }
+.homespace-body::-webkit-scrollbar-track { background: transparent; }
+.homespace-body::-webkit-scrollbar-thumb {
+  background: var(--n5);
+  border-radius: 999px;
+}
+.homespace-body::-webkit-scrollbar-thumb:hover { background: var(--n6); }
+
+.conversation-transcript::-webkit-scrollbar { width: 4px; }
+
+/* 5. Companion font on suggested card text ─────────────────────────────── */
+/* Small detail: HeyClicky's suggestion copy uses rounded lettering        */
+.suggested-card { font-family: var(--font-companion); }
+.suggestion-text { font-family: var(--font-companion); }
+.thought-bubble  { font-family: var(--font-companion); }
+
+/* 6. Composer screenshot/attach button ─────────────────────────────────── */
+/* HeyClicky's composer has a screenshot button left of the send button    */
+.composer-attach {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--n7);
+  border-radius: var(--r-chip);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: background var(--t-fast), color var(--t-fast);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.composer-attach:hover {
+  background: var(--n3);
+  color: var(--n10);
+}
+.composer-attach img,
+.composer-attach svg {
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+}
+
+/* 7. Rail icon uses SVG ─────────────────────────────────────────────────── */
+.rail-icon svg,
+.rail-icon img {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  fill: none;
+  display: block;
+}
+
+/* 8. HUD chip glass upgrade ─────────────────────────────────────────────── */
+/* Match the notch pill's true glass treatment                              */
+.hud-chip {
+  backdrop-filter: blur(24px) saturate(150%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(150%) !important;
+  background: rgba(25, 26, 31, 0.60) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.10), var(--sh-float) !important;
+}
+@supports not (backdrop-filter: blur(1px)) {
+  .hud-chip { background: var(--n1) !important; }
+}
+
+/* 9. Send button upgrade — gel disc with icon ───────────────────────────── */
+.send-btn {
+  position: relative;
+  overflow: hidden;
+}
+.send-btn::after {
+  /* Specular highlight on gel disc */
+  content: "";
+  position: absolute;
+  top: 2px; left: 20%;
+  width: 60%; height: 40%;
+  background: linear-gradient(180deg, rgba(255,255,255,.3) 0%, transparent 100%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* 10. Suggested card shimmer-on-hover ───────────────────────────────────── */
+/* HeyClicky shows a gleam sweep on card hover */
+.suggested-card {
+  position: relative;
+  overflow: hidden;
+}
+.suggested-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 40%,
+    rgba(255,255,255,0.04) 50%,
+    transparent 60%
+  );
+  transform: translateX(-100%);
+  transition: transform 400ms cubic-bezier(0.16,1,0.3,1);
+  pointer-events: none;
+}
+.suggested-card:hover::after {
+  transform: translateX(100%);
+}

@@ -63,9 +63,11 @@
 
   /* ── Typography ── */
   /* Windows Segoe UI Variable with rounded feel via weight + tracking   */
-  --font-ui:      "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
-  --font-display: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
-  --font-mono:    "Cascadia Code", "Consolas", ui-monospace, monospace;
+  --font-ui:        "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-display:   "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --font-mono:      "Cascadia Code", "Consolas", ui-monospace, monospace;
+  /* Rounded companion voice — Nunito for mascot / HUD chip labels only  */
+  --font-companion: "Nunito", "Segoe UI Variable Text", system-ui, sans-serif;
 
   /* Scale: 11 caption / 12 chip / 13 secondary / 14 body / 16 title / 20 sheet / 28 hero */
   --fs-caption:   11px;
