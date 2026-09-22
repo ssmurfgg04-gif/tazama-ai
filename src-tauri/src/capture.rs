@@ -309,6 +309,7 @@ fn key_to_sendkeys(key: &str) -> Result<String, String> {
 
 // ─── Clipboard write ──────────────────────────────────────────────────────────
 
+#[allow(dead_code)]
 #[tauri::command]
 pub fn clipboard_write_capture(text: String) -> Result<(), String> {
     // Use Set-Clipboard (PowerShell 5+, always available on Windows 10/11)

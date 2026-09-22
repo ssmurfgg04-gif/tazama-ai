@@ -28,6 +28,7 @@ pub struct Agent {
 }
 
 impl Agent {
+    #[allow(dead_code)]
     pub fn new(name: impl Into<String>, description: impl Into<String>) -> Self {
         let id = format!("agent-{}", Utc::now().timestamp_millis());
         Agent {
