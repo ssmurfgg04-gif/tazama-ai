@@ -2,6 +2,7 @@ use std::sync::Mutex;
 use tauri::Manager;
 
 mod caps;
+mod secrets;
 
 #[derive(Default)]
 pub struct AppState {
@@ -18,7 +19,11 @@ pub fn run() {
         .plugin(tauri_plugin_log::Builder::default().build())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_keyring::init())
-        .invoke_handler(tauri::generate_handler![])
+        .invoke_handler(tauri::generate_handler![
+            secrets::key_set,
+            secrets::key_has,
+            secrets::key_remove
+        ])
         .run(tauri::generate_context!())
         .expect("error while running Peek");
 }
