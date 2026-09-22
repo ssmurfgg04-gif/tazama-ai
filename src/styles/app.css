@@ -692,6 +692,34 @@
 }
 .settings-row:last-child { border-bottom: none; }
 
+/* Provider key rows (name + badge + input + 3 buttons + status) cannot fit
+   a 400px window on one line — without this they overflow horizontally and
+   Save/Remove/Test end up unreachable behind the scroll edge (QA evidence
+   b-settings-ai-providers.png). Wrap onto two lines instead:
+   line 1 = provider name + badge, line 2 = key input + actions. */
+.settings-row[data-provider] {
+  flex-wrap: wrap;
+  row-gap: var(--sp-2);
+}
+.settings-row[data-provider] .settings-name {
+  flex: 1 1 auto;
+}
+.settings-row input[data-key-input] {
+  flex: 1 1 130px;
+  min-width: 0;
+  width: auto;
+  padding: 4px 8px;
+  border-radius: var(--r-input, 8px);
+  border: 1px solid var(--n4);
+  background: var(--n2);
+  color: var(--n10);
+  font-size: var(--fs-secondary);
+}
+.settings-row input[data-key-input]:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 .settings-row-info { display: flex; flex-direction: column; gap: 2px; }
 .settings-name  { font-size: var(--fs-body); font-weight: 500; color: var(--n10); }
 .settings-hint  { font-size: var(--fs-secondary); color: var(--n8); }

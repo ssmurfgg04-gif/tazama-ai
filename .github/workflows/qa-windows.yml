@@ -246,6 +246,22 @@ jobs:
           $ErrorActionPreference = "Continue"
           New-Item -ItemType Directory -Force -Path qa-evidence\shots, qa-evidence\logs | Out-Host
 
+          # ── Move the window to the top-left ─────────────────────────────
+          # The runner display is 1024x768; a centred 400x680 window puts its
+          # composer behind the taskbar. Move + resize so the WHOLE surface
+          # is visible in every screenshot.
+          try {
+            Add-Type -Namespace Native -Name WinMove -MemberDefinition '[DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, bool bRepaint);'
+            $proc = Get-Process | Where-Object { $_.ProcessName -like "*azama*" -and $_.MainWindowHandle -ne 0 } | Select-Object -First 1
+            if ($proc) {
+              [Native.WinMove]::MoveWindow($proc.MainWindowHandle, 12, 12, 420, 700, $true) | Out-Null
+              Start-Sleep -Seconds 2
+              Write-Host "Moved Tazama window to (12,12) 420x700"
+            } else {
+              Write-Host "::warning::No Tazama window handle found to move."
+            }
+          } catch { Write-Host "Window move failed (non-fatal): $_" }
+
           function Save-Shot([string]$name) {
             Add-Type -AssemblyName System.Windows.Forms
             Add-Type -AssemblyName System.Drawing

@@ -1,7 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Tazama AI",
-  "version": "0.1.1",
+  "mainBinaryName": "Tazama AI",
+  "version": "0.1.2",
   "identifier": "com.tazamaai.app",
   "build": {
     "beforeDevCommand": "npm run dev",

@@ -25,13 +25,6 @@ if (savedAccent) document.documentElement.style.setProperty("--accent", savedAcc
 if (localStorage.getItem("animations-enabled") === "false")
   document.documentElement.style.setProperty("--animations-enabled", "0");
 
-// ─── Feature stylesheet ────────────────────────────────────────────────────────
-
-const link = document.createElement("link");
-link.rel = "stylesheet";
-link.href = "/src/styles/features.css";
-document.head.append(link);
-
 // ─── Mount all surfaces ────────────────────────────────────────────────────────
 
 window.addEventListener("DOMContentLoaded", () => {
