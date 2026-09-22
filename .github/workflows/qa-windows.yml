@@ -1,0 +1,441 @@
+name: QA Windows
+
+# Runs automatically after the Release workflow completes successfully.
+# Downloads the released installer, verifies hash + Authenticode signature,
+# silently installs it on this disposable windows-latest runner, launches the
+# app, drives the UI where possible (UIA), and captures evidence:
+#   - screenshots every 5s for 60s  -> qa-evidence/shots/
+#   - process list + window titles
+#   - app logs + crash dumps (LOCALAPPDATA / APPDATA / EBWebView Crashpad)
+#   - Windows Application event-log errors (Level 2, last 20)
+# Everything is uploaded as the `qa-evidence` artifact.
+
+on:
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  qa:
+    name: Install + Launch + Evidence (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    # Only run when the release actually succeeded; a failed release is
+    # already red on its own workflow.
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      # ── 1. Resolve the release tag ──────────────────────────────────────
+      # Tag-triggered runs expose the tag via workflow_run.head_branch.
+      # Dispatch/branch runs do not, so fall back to the latest release.
+      - name: Resolve release tag
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tag = $env:HEAD_BRANCH
+          $resolvedBy = "workflow_run.head_branch"
+          if ([string]::IsNullOrWhiteSpace($tag) -or $tag -eq "master" -or $tag -eq "main") {
+            $tag = gh release list --limit 1 --json tagName --jq '.[0].tagName'
+            $resolvedBy = "latest release"
+          }
+          if ([string]::IsNullOrWhiteSpace($tag)) {
+            Write-Host "::error::Could not resolve a release tag."
+            exit 1
+          }
+          # Prove the release exists before spending build minutes.
+          gh release view "$tag" --json tagName,name,isDraft,publishedAt | Out-Host
+          Write-Host "Resolved tag '$tag' via $resolvedBy"
+          "tag=$tag"       >> $env:GITHUB_OUTPUT
+          "resolved_by=$resolvedBy" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+
+      # ── 2. Download installer assets ────────────────────────────────────
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force -Path dist | Out-Host
+          gh release download "${{ steps.resolve.outputs.tag }}" `
+            --pattern "*-setup.exe" --pattern "*.msi" --dir dist --clobber
+          if (-not (Test-Path "dist")) { Write-Host "::error::dist missing"; exit 1 }
+          $files = Get-ChildItem dist
+          if ($files.Count -eq 0) {
+            Write-Host "::error::No installer assets were downloaded."
+            exit 1
+          }
+          $files | Format-Table Name, Length -AutoSize | Out-Host
+        shell: pwsh
+
+      # ── 3. Integrity: SHA256 + Authenticode ─────────────────────────────
+      - name: Verify hash and signature
+        id: verify
+        run: |
+          $ErrorActionPreference = "Stop"
+          $out = "dist/integrity.json"
+          $rows = foreach ($f in (Get-ChildItem dist -File)) {
+            if ($f.Extension -notin ".exe", ".msi") { continue }
+            $hash = (Get-FileHash $f.FullName -Algorithm SHA256).Hash
+            $sig  = Get-AuthenticodeSignature $f.FullName
+            [pscustomobject]@{
+              file        = $f.Name
+              size_bytes  = $f.Length
+              sha256      = $hash
+              sig_status  = "$($sig.Status)"
+              signer      = $(if ($sig.SignerCertificate) { $sig.SignerCertificate.Subject } else { $null })
+              timestamp   = $(if ($sig.TimeStamperCertificate) { $sig.TimeStamperCertificate.Subject } else { $null })
+            }
+          }
+          $rows | ConvertTo-Json -Depth 4 | Set-Content $out -Encoding utf8
+          $rows | Format-List | Out-Host
+          $signed = @($rows | Where-Object { $_.sig_status -eq "Valid" }).Count
+          Write-Host "Signed assets: $signed / $($rows.Count) (expected: unsigned until signing secrets are configured)"
+          "integrity_file=$out" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+
+      # ── 4. Pre-flight: WebView2 runtime ─────────────────────────────────
+      # Tauri uses downloadBootstrapper, but the runner may already ship a
+      # WebView2 runtime with Edge. Log the state; bootstrap only if absent.
+      - name: Ensure WebView2 runtime
+        run: |
+          $found = @(
+            "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+            "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+            "HKCU:\Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+          ) | Where-Object { Test-Path $_ }
+          if ($found) {
+            Write-Host "WebView2 runtime already present:"
+            foreach ($k in $found) { Get-ItemProperty $k | Select-Object pv, name | Format-List | Out-Host }
+          } else {
+            Write-Host "WebView2 runtime not found — bootstrapping evergreen runtime…"
+            $url = "https://go.microsoft.com/fwlink/?linkid=2099617" # Evergreen Bootstrapper
+            Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\MicrosoftEdgeWebSetup.exe"
+            $p = Start-Process "$env:TEMP\MicrosoftEdgeWebSetup.exe" -ArgumentList "/silent","/install" -Wait -PassThru
+            Write-Host "WebView2 bootstrapper exit code: $($p.ExitCode)"
+            if ($p.ExitCode -ne 0) { Write-Host "::warning::WebView2 bootstrap exit $($p.ExitCode) — the app installer may bootstrap it itself." }
+          }
+        shell: pwsh
+
+      # ── 5. Silent install (NSIS /S) ─────────────────────────────────────
+      # The MSI is hash/signature-verified above but NOT installed on this
+      # same box: NSIS and MSI would fight over the uninstall registration
+      # and single-instance plugin. NSIS setup.exe is the recommended
+      # installer; the MSI is the alternative channel.
+      - name: Silent install NSIS
+        id: install
+        run: |
+          $ErrorActionPreference = "Stop"
+          $setup = Get-ChildItem dist -Filter "*-setup.exe" | Select-Object -First 1
+          if (-not $setup) {
+            Write-Host "::error::No *-setup.exe in dist/ — cannot install."
+            exit 1
+          }
+          Write-Host "Installing $($setup.Name) /S …"
+          $p = Start-Process $setup.FullName -ArgumentList "/S" -Wait -PassThru
+          Write-Host "Installer exit code: $($p.ExitCode)"
+          "install_exit=$($p.ExitCode)" >> $env:GITHUB_OUTPUT
+          if ($p.ExitCode -ne 0) {
+            Write-Host "::error::Installer exited non-zero ($($p.ExitCode))."
+            exit 1
+          }
+          Start-Sleep -Seconds 3
+
+          # Locate the installed exe (search breadth: per-user first, then machine)
+          $candidates = @(
+            "$env:LOCALAPPDATA\Programs",
+            "$env:LOCALAPPDATA",
+            "${env:ProgramFiles}",
+            "${env:ProgramFiles(x86)}"
+          )
+          $exe = $null
+          foreach ($root in $candidates) {
+            if (-not (Test-Path $root)) { continue }
+            $hit = Get-ChildItem $root -Recurse -Filter "Tazama AI.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($hit) { $exe = $hit; break }
+          }
+          # Registry fallback (NSIS writes an uninstall key with InstallLocation)
+          if (-not $exe) {
+            $keys = @(
+              "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall",
+              "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall",
+              "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
+            )
+            foreach ($k in $keys) {
+              if (-not (Test-Path $k)) { continue }
+              $props = Get-ChildItem $k -ErrorAction SilentlyContinue | ForEach-Object { Get-ItemProperty $_.PSPath } |
+                       Where-Object { $_.DisplayName -like "Tazama AI*" }
+              foreach ($pp in $props) {
+                Write-Host "Uninstall key: $($pp.DisplayName) $($pp.DisplayVersion) @ $($pp.InstallLocation)"
+                if ($pp.InstallLocation) {
+                  $hit = Get-ChildItem $pp.InstallLocation -Filter "*.exe" -ErrorAction SilentlyContinue |
+                         Where-Object { $_.Name -like "*azama*" } | Select-Object -First 1
+                  if ($hit) { $exe = $hit; break }
+                }
+              }
+              if ($exe) { break }
+            }
+          }
+          if (-not $exe) {
+            Write-Host "::error::Installed 'Tazama AI.exe' not found anywhere."
+            Get-ChildItem "$env:LOCALAPPDATA\Programs" -ErrorAction SilentlyContinue | Out-Host
+            exit 1
+          }
+          Write-Host "Installed exe: $($exe.FullName)"
+          "exe_path=$($exe.FullName)" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+
+      # ── 6. Launch + settle ──────────────────────────────────────────────
+      - name: Launch app
+        id: launch
+        run: |
+          $ErrorActionPreference = "Stop"
+          $exe = "${{ steps.install.outputs.exe_path }}"
+          Write-Host "Launching $exe …"
+          Start-Process $exe
+          Start-Sleep -Seconds 30
+          $proc = Get-Process | Where-Object { $_.Path -eq $exe -or $_.ProcessName -like "*azama*" } |
+                  Select-Object -First 1
+          $alive  = [bool]$proc
+          $title  = if ($proc) { $proc.MainWindowTitle } else { "" }
+          Write-Host "Process alive: $alive ; MainWindowTitle: '$title'"
+          "alive=$alive"       >> $env:GITHUB_OUTPUT
+          "window_title=$title" >> $env:GITHUB_OUTPUT
+          if (-not $alive) {
+            Write-Host "::error::App process is not running 30s after launch."
+            exit 1
+          }
+          if ([string]::IsNullOrWhiteSpace($title)) {
+            Write-Host "::warning::MainWindowTitle is empty — window may not have shown."
+          }
+        shell: pwsh
+
+      # ── 7. UIA drive (best-effort, never fatal) ─────────────────────────
+      # Walk the app's accessibility tree and invoke buttons by name so the
+      # evidence covers onboarding → HomeSpace → Settings → AI Providers.
+      # WebView2 exposes its content tree to UIA once a client connects.
+      - name: UIA navigation pass
+        id: uia
+        run: |
+          $ErrorActionPreference = "Continue"
+          New-Item -ItemType Directory -Force -Path qa-evidence\shots, qa-evidence\logs | Out-Host
+
+          function Save-Shot([string]$name) {
+            Add-Type -AssemblyName System.Windows.Forms
+            Add-Type -AssemblyName System.Drawing
+            $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
+            $bmp = New-Object System.Drawing.Bitmap($b.Width, $b.Height)
+            $g = [System.Drawing.Graphics]::FromImage($bmp)
+            $g.CopyFromScreen($b.Left, $b.Top, 0, 0, $bmp.Size)
+            $g.Dispose()
+            $bmp.Save("qa-evidence\shots\$name.png", [System.Drawing.Imaging.ImageFormat]::Png)
+            $bmp.Dispose()
+            Write-Host "shot: $name"
+          }
+
+          function Invoke-AppButton([string]$pattern) {
+            try {
+              Add-Type -AssemblyName UIAutomationClient
+              Add-Type -AssemblyName UIAutomationTypes
+              $root = [System.Windows.Automation.AutomationElement]::RootElement
+              $winCond = New-Object System.Windows.Automation.PropertyCondition(
+                [System.Windows.Automation.AutomationElement]::NameProperty, "Tazama AI")
+              $win = $root.FindFirst([System.Windows.Automation.TreeScope]::Children, $winCond)
+              if (-not $win) { Write-Host "UIA: window 'Tazama AI' not found"; return $false }
+              $btnCond = New-Object System.Windows.Automation.PropertyCondition(
+                [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+                [System.Windows.Automation.ControlType]::Button)
+              $buttons = $win.FindAll([System.Windows.Automation.TreeScope]::Descendants, $btnCond)
+              foreach ($b in $buttons) {
+                if ($b.Current.Name -like $pattern) {
+                  Write-Host "UIA: invoking button '$($b.Current.Name)'"
+                  $inv = $b.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+                  $inv.Invoke()
+                  return $true
+                }
+              }
+              Write-Host "UIA: no button matching '$pattern' (found $($buttons.Count) buttons)"
+              try {
+                $sb = New-Object System.Text.StringBuilder
+                foreach ($b in $buttons) { [void]$sb.Append("'"); [void]$sb.Append($b.Current.Name); [void]$sb.Append("' ") }
+                Write-Host "UIA buttons: $($sb.ToString())"
+              } catch {}
+              return $false
+            } catch {
+              Write-Host "UIA error (non-fatal): $_"
+              return $false
+            }
+          }
+
+          # Give WebView2 a beat to register its accessibility tree, then
+          # walk: skip onboarding → screenshot → settings → screenshot → home.
+          $clicked = 0
+          foreach ($attempt in 1..3) {
+            if (Invoke-AppButton "*Skip for now*") { $clicked++; break }
+            Start-Sleep -Seconds 5
+          }
+          Start-Sleep -Seconds 3
+          Save-Shot "a-home-after-onboarding"
+
+          foreach ($attempt in 1..3) {
+            if (Invoke-AppButton "Settings") { $clicked++; break }
+            Start-Sleep -Seconds 5
+          }
+          Start-Sleep -Seconds 3
+          Save-Shot "b-settings-ai-providers"
+
+          foreach ($attempt in 1..2) {
+            if (Invoke-AppButton "Home") { $clicked++; break }
+            Start-Sleep -Seconds 5
+          }
+          Start-Sleep -Seconds 2
+          Save-Shot "c-home-composer"
+          Write-Host "UIA clicks succeeded: $clicked"
+          "uia_clicks=$clicked" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+
+      # ── 8. Screenshot loop: every 5s for 60s ────────────────────────────
+      - name: Screenshot loop (60s)
+        run: |
+          $ErrorActionPreference = "Continue"
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -AssemblyName System.Drawing
+          New-Item -ItemType Directory -Force -Path qa-evidence\shots | Out-Host
+
+          $black = 0; $total = 0
+          for ($i = 1; $i -le 12; $i++) {
+            $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
+            $bmp = New-Object System.Drawing.Bitmap($b.Width, $b.Height)
+            $g = [System.Drawing.Graphics]::FromImage($bmp)
+            $g.CopyFromScreen($b.Left, $b.Top, 0, 0, $bmp.Size)
+            $g.Dispose()
+
+            # brightness sample to detect all-black captures
+            $sum = 0L; $n = 0
+            for ($x = 0; $x -lt $bmp.Width; $x += 64) {
+              for ($y = 0; $y -lt $bmp.Height; $y += 64) {
+                $c = $bmp.GetPixel($x, $y)
+                $sum += ($c.R + $c.G + $c.B); $n++
+              }
+            }
+            $avg = if ($n) { $sum / ($n * 3) } else { 0 }
+            $total++
+            if ($avg -lt 2) { $black++ }
+
+            $bmp.Save("qa-evidence\shots\loop-$('{0:d2}' -f $i).png", [System.Drawing.Imaging.ImageFormat]::Png)
+            $bmp.Dispose()
+            Write-Host ("loop-{0:d2}: avg brightness {1:F1}" -f $i, $avg)
+            if ($i -lt 12) { Start-Sleep -Seconds 5 }
+          }
+          Write-Host "Black-ish shots: $black / $total"
+          "black_shots=$black"   >> $env:GITHUB_ENV
+          "total_shots=$total"   >> $env:GITHUB_ENV
+        shell: pwsh
+
+      # ── 9. Evidence: processes, windows, logs, crash events ─────────────
+      - name: Collect process, log and crash evidence
+        run: |
+          $ErrorActionPreference = "Continue"
+          New-Item -ItemType Directory -Force -Path qa-evidence\logs | Out-Host
+
+          # 9a. Process snapshot + window titles
+          $procs = Get-Process | Where-Object { $_.ProcessName -like "*azama*" -or $_.MainWindowTitle -like "*azama*" } |
+                   Select-Object Id, ProcessName, MainWindowTitle, StartTime, Responding
+          $procs | Format-Table -AutoSize | Out-Host
+          $procs | ConvertTo-Json -Depth 3 | Set-Content qa-evidence\processes.json -Encoding utf8
+
+          # Survival check after the 60s loop
+          $stillAlive = @($procs).Count -gt 0
+          "still_alive=$stillAlive" >> $env:GITHUB_ENV
+          Write-Host "App survived 60s+ window: $stillAlive"
+
+          # 9b. App logs + crash dumps from plausible locations
+          $logRoots = @(
+            "$env:LOCALAPPDATA\com.tazamaai.app",
+            "$env:APPDATA\com.tazamaai.app",
+            "$env:LOCALAPPDATA\Tazama AI",
+            "$env:LOCALAPPDATA\Programs\Tazama AI"
+          )
+          foreach ($root in $logRoots) {
+            if (-not (Test-Path $root)) { continue }
+            Write-Host "== $root =="
+            Get-ChildItem $root -Recurse -Include *.log,*.dmp,*.txt -ErrorAction SilentlyContinue |
+              ForEach-Object {
+                Write-Host "copy: $($_.FullName) ($($_.Length) bytes)"
+                $safe = $_.FullName.Replace($root, "").Trim('\').Replace('\', '__')
+                Copy-Item $_.FullName "qa-evidence\logs\$safe" -Force
+              }
+          }
+          # WebView2 crashpad reports
+          $cp = "$env:LOCALAPPDATA\com.tazamaai.app\EBWebView\Crashpad\reports"
+          if (Test-Path $cp) {
+            Get-ChildItem $cp -ErrorAction SilentlyContinue | ForEach-Object {
+              Copy-Item $_.FullName "qa-evidence\logs\dmp-$($_.Name)" -Force
+            }
+          }
+
+          # 9c. Windows Application event log errors (last 20)
+          try {
+            Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Level = 2 } -MaxEvents 20 -ErrorAction Stop |
+              Select-Object TimeCreated, ProviderName, Id, LevelDisplayName, @{ n = 'Message'; e = { $_.Message.Substring(0, [Math]::Min(400, $_.Message.Length)) } } |
+              Format-List | Out-Host
+            Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Level = 2 } -MaxEvents 20 -ErrorAction Stop |
+              ConvertTo-Json -Depth 3 | Set-Content qa-evidence\app-events-errors.json -Encoding utf8
+          } catch {
+            Write-Host "No Application error events (or query failed): $_"
+            "[]" | Set-Content qa-evidence\app-events-errors.json
+          }
+        shell: pwsh
+
+      # ── 10. QA summary ──────────────────────────────────────────────────
+      - name: Write QA summary
+        run: |
+          $ErrorActionPreference = "Continue"
+          $summary = [ordered]@{
+            tag               = "${{ steps.resolve.outputs.tag }}"
+            release_url       = "https://github.com/${{ github.repository }}/releases/tag/${{ steps.resolve.outputs.tag }}"
+            runner            = "windows-latest"
+            install_exit_code = "${{ steps.install.outputs.install_exit }}"
+            installed_exe     = "${{ steps.install.outputs.exe_path }}"
+            process_alive_30s = "${{ steps.launch.outputs.alive }}"
+            window_title      = "${{ steps.launch.outputs.window_title }}"
+            survived_60s      = "$env:still_alive"
+            uia_clicks        = "${{ steps.uia.outputs.uia_clicks }}"
+            screenshots       = @{ total = "$env:total_shots"; black = "$env:black_shots" }
+            integrity         = Get-Content dist/integrity.json | ConvertFrom-Json
+          }
+          $json = $summary | ConvertTo-Json -Depth 6
+          $json | Set-Content qa-evidence\qa-summary.json -Encoding utf8
+          Write-Host $json
+          $md = @()
+          $md += "## QA Windows summary — ${{ steps.resolve.outputs.tag }}"
+          $md += ""
+          $md += "| Check | Result |"
+          $md += "|---|---|"
+          $md += "| Install exit code | ``${{ steps.install.outputs.install_exit }}`` |"
+          $md += "| Process alive at 30s | ${{ steps.launch.outputs.alive }} |"
+          $md += "| Window title | ``${{ steps.launch.outputs.window_title }}`` |"
+          $md += "| Survived 60s | $env:still_alive |"
+          $md += "| Screenshots (black/total) | $env:black_shots / $env:total_shots |"
+          $md += ""
+          ($md -join "`n") >> $env:GITHUB_STEP_SUMMARY
+        shell: pwsh
+
+      # ── 11. Upload evidence ─────────────────────────────────────────────
+      - name: Upload qa-evidence artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-evidence
+          path: |
+            qa-evidence/
+            dist/integrity.json
+          if-no-files-found: error
+          retention-days: 30

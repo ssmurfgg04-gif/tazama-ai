@@ -193,18 +193,25 @@ pub fn cu_exec(action: CUAction) -> Result<String, String> {
 
         "type" => {
             let text = action.text.ok_or("text required")?;
-            // Escape special SendKeys chars
-            let escaped = text
-                .replace('{', "{{}}")
-                .replace('}', "{}}")
-                .replace('(', "{(}")
-                .replace(')', "{)}")
-                .replace('[', "{[}")
-                .replace(']', "{]}")
-                .replace('+', "{+}")
-                .replace('^', "{^}")
-                .replace('%', "{%}")
-                .replace('~', "{~}");
+            // Escape special SendKeys chars — single pass, because chained
+            // `.replace` calls re-process characters introduced by earlier
+            // passes (e.g. `{` -> `{{}}` then corrupts the inserted `}`).
+            let mut escaped = String::with_capacity(text.len());
+            for c in text.chars() {
+                match c {
+                    '{' => escaped.push_str("{{}"),
+                    '}' => escaped.push_str("{}}"),
+                    '(' => escaped.push_str("{(}"),
+                    ')' => escaped.push_str("{)}"),
+                    '[' => escaped.push_str("{[}"),
+                    ']' => escaped.push_str("{]}"),
+                    '+' => escaped.push_str("{+}"),
+                    '^' => escaped.push_str("{^}"),
+                    '%' => escaped.push_str("{%}"),
+                    '~' => escaped.push_str("{~}"),
+                    _   => escaped.push(c),
+                }
+            }
             ps_run(&format!(
                 "Add-Type -AssemblyName System.Windows.Forms; \
                  [System.Windows.Forms.SendKeys]::SendWait('{escaped}');"
@@ -349,5 +356,36 @@ mod tests {
     fn key_to_sendkeys_enter() {
         let s = key_to_sendkeys("Return").unwrap();
         assert_eq!(s, "{ENTER}");
+    }
+
+    // Mirrors the `type` action's inline escaping — keep in sync.
+    fn escape_sendkeys(text: &str) -> String {
+        let mut escaped = String::with_capacity(text.len());
+        for c in text.chars() {
+            match c {
+                '{' => escaped.push_str("{{}"),
+                '}' => escaped.push_str("{}}"),
+                '(' => escaped.push_str("{(}"),
+                ')' => escaped.push_str("{)}"),
+                '[' => escaped.push_str("{[}"),
+                ']' => escaped.push_str("{]}"),
+                '+' => escaped.push_str("{+}"),
+                '^' => escaped.push_str("{^}"),
+                '%' => escaped.push_str("{%}"),
+                '~' => escaped.push_str("{~}"),
+                _   => escaped.push(c),
+            }
+        }
+        escaped
+    }
+
+    #[test]
+    fn sendkeys_escaping_single_pass_is_correct() {
+        assert_eq!(escape_sendkeys("{"), "{{}");
+        assert_eq!(escape_sendkeys("}"), "{}}");
+        assert_eq!(escape_sendkeys("{}"), "{{}{}}");
+        assert_eq!(escape_sendkeys("a+b"), "a{+}b");
+        assert_eq!(escape_sendkeys("(x)"), "{(}x{)}");
+        assert_eq!(escape_sendkeys("plain text"), "plain text");
     }
 }

@@ -163,6 +163,7 @@ function setSVGAttr(id: string, attr: string, val: string): void {
 
 export function setExpression(expr: MascotExpression): void {
   stopBlink();
+  stopAnimations();
   trackingEnabled = true;
 
   switch (expr) {

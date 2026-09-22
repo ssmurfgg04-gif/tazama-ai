@@ -498,6 +498,26 @@
   min-height: 100%;
 }
 
+/* ── Escape hatch (skip onboarding) ── */
+.onboarding-skip {
+  background: none;
+  border: none;
+  color: var(--n6);
+  font: inherit;
+  font-size: var(--fs-caption, 12px);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  padding: var(--sp-2, 8px) var(--sp-3, 12px);
+  border-radius: var(--r-pill, 999px);
+  transition: color 150ms ease;
+}
+.onboarding-skip:hover { color: var(--n10); }
+.onboarding-skip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* ── Intro thought bubble ── */
 /* InterviewThoughtBubbles / TutorialSpeechBubbleShape */
 .onboarding-intro {

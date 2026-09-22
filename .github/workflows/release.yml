@@ -77,21 +77,36 @@ jobs:
       #
       # If NO signing secrets are set: installer ships unsigned.
       # Windows SmartScreen will show "More info → Run anyway" for unsigned builds.
+      #
+      # NOTE: the `secrets` context is NOT available in job-level `if:`
+      # expressions (it makes the whole workflow file invalid and GitHub
+      # fails every run at parse time). The availability check therefore
+      # lives inside the step script via an env-mapped secret.
 
       - name: Sign — Azure Trusted Signing
-        if: ${{ secrets.AZURE_CLIENT_ID != '' }}
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CS_ENDPOINT: ${{ secrets.AZURE_CS_ENDPOINT }}
+          AZURE_CS_ACCOUNT: ${{ secrets.AZURE_CS_ACCOUNT }}
+          AZURE_CS_PROFILE: ${{ secrets.AZURE_CS_PROFILE }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
         run: |
-          $installer = Get-ChildItem "src-tauri/target/release/bundle/nsis" -Filter "*.exe" | Select-Object -First 1
-          if (-not $installer) { exit 0 }
+          if ([string]::IsNullOrWhiteSpace($env:AZURE_CLIENT_ID)) {
+            Write-Host "No AZURE_CLIENT_ID secret set — skipping Azure Trusted Signing."
+            exit 0
+          }
+          $installer = Get-ChildItem "src-tauri/target" -Recurse -Filter "*-setup.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $installer) { Write-Host "No NSIS installer found to sign."; exit 0 }
           Write-Host "Signing with Azure Trusted Signing: $($installer.Name)"
           dotnet tool install --global Microsoft.Trusted.Signing.Client 2>$null
           TrustedSigning `
-            --endpoint    "${{ secrets.AZURE_CS_ENDPOINT }}" `
-            --account     "${{ secrets.AZURE_CS_ACCOUNT }}" `
-            --profile     "${{ secrets.AZURE_CS_PROFILE }}" `
-            --tenant-id   "${{ secrets.AZURE_TENANT_ID }}" `
-            --client-id   "${{ secrets.AZURE_CLIENT_ID }}" `
-            --client-secret "${{ secrets.AZURE_CLIENT_SECRET }}" `
+            --endpoint    "$env:AZURE_CS_ENDPOINT" `
+            --account     "$env:AZURE_CS_ACCOUNT" `
+            --profile     "$env:AZURE_CS_PROFILE" `
+            --tenant-id   "$env:AZURE_TENANT_ID" `
+            --client-id   "$env:AZURE_CLIENT_ID" `
+            --client-secret "$env:AZURE_CLIENT_SECRET" `
             --files "$($installer.FullName)" `
             --timestamp-rfc3161 http://timestamp.acs.microsoft.com `
             --file-digest sha256
@@ -103,16 +118,26 @@ jobs:
       - name: Locate build artifacts
         id: artifacts
         run: |
-          $nsis = Get-ChildItem "src-tauri/target/release/bundle/nsis" -Filter "*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          $msi  = Get-ChildItem "src-tauri/target/release/bundle/msi"  -Filter "*.msi" -ErrorAction SilentlyContinue | Select-Object -First 1
+          $nsis = Get-ChildItem "src-tauri/target" -Recurse -Filter "*-setup.exe" -ErrorAction SilentlyContinue |
+                  Where-Object { $_.FullName -like "*bundle*nsis*" } | Select-Object -First 1
+          $msi  = Get-ChildItem "src-tauri/target" -Recurse -Filter "*.msi" -ErrorAction SilentlyContinue |
+                  Where-Object { $_.FullName -like "*bundle*msi*" } | Select-Object -First 1
 
           if ($nsis) {
             Write-Host "NSIS: $($nsis.FullName) ($([math]::Round($nsis.Length/1MB,1)) MB)"
             echo "nsis_path=$($nsis.FullName)" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "::warning::No NSIS installer found anywhere under src-tauri/target"
           }
           if ($msi) {
             Write-Host "MSI: $($msi.FullName) ($([math]::Round($msi.Length/1MB,1)) MB)"
             echo "msi_path=$($msi.FullName)" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "::warning::No MSI package found anywhere under src-tauri/target"
+          }
+          if (-not $nsis -and -not $msi) {
+            Write-Host "::error::No installable artifacts produced — refusing to publish an empty release."
+            exit 1
           }
         shell: pwsh
 

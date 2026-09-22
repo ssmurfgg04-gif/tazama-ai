@@ -14,6 +14,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { PROVIDERS } from "../settings.js";
 
 /* ─── Types ─── */
 interface TazamaMessage {
@@ -346,6 +347,30 @@ function buildComposer(): HTMLElement {
   return composer;
 }
 
+/* ─── Provider selection ─── */
+/* The chat must work with WHATEVER key the user stored (README tells them
+ * to start with Anthropic or Groq). Pick the first provider that has a
+ * key in the OS keyring; fall back to Anthropic if probing fails. */
+const DEFAULT_MODELS: Record<string, string> = {
+  anthropic: "claude-haiku-4-5",
+  openai:    "gpt-4o-mini",
+  groq:      "llama-3.3-70b-versatile",
+  nvidia:    "meta/llama-3.1-70b-instruct",
+};
+
+async function pickProvider(): Promise<{ provider: string; model: string }> {
+  for (const def of PROVIDERS) {
+    if (def.id === "fish") continue; // speech-only provider, no chat endpoint
+    try {
+      const has = await invoke<boolean>("key_has", { provider: def.id });
+      if (has) {
+        return { provider: def.id, model: DEFAULT_MODELS[def.id] ?? "default" };
+      }
+    } catch { /* keyring miss — try next provider */ }
+  }
+  return { provider: "anthropic", model: DEFAULT_MODELS.anthropic };
+}
+
 /* ─── Message flow ─── */
 async function sendMessage(text: string, container: HTMLElement): Promise<void> {
   // Switch to conversation view if on suggestions
@@ -396,9 +421,10 @@ async function sendMessage(text: string, container: HTMLElement): Promise<void> 
       : [{ role: "user", content: text }];
 
     // Invoke Rust provider (keys from OS keyring — never from JS)
+    const { provider, model } = await pickProvider();
     const result = await invoke<string>("chat_complete", {
-      provider: "anthropic",
-      model: "claude-haiku-4-5",
+      provider,
+      model,
       messages: aiMessages,
     });
 

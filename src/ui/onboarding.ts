@@ -68,7 +68,15 @@ export function mountOnboarding(root: HTMLElement, onComplete: () => void): void
   const intro = buildIntro();
   const cards  = buildCardList(onComplete);
 
-  root.append(intro, cards);
+  // Escape hatch: onboarding must never be a hard gate. If a permission
+  // step fails on this machine (capture blocked, mic denied, …) the user
+  // can still reach HomeSpace and configure everything later in Settings.
+  const skip = document.createElement("button");
+  skip.className = "onboarding-skip";
+  skip.textContent = "Skip for now — set this up later in Settings";
+  skip.addEventListener("click", onComplete);
+
+  root.append(intro, cards, skip);
 }
 
 /* ── Intro thought-bubble block ── */
