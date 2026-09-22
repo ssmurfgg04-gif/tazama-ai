@@ -1,0 +1,219 @@
+/* ─── Tazama AI Design Tokens ─── */
+/* Derived from HeyClicky binary reverse-engineering (2026-09-22)       */
+/* Windows/CSS equivalents of the macOS UIKit/SwiftUI token system       */
+
+:root {
+  /* ── Neutral ramp (dark-first) ── */
+  /* #111 → #FBFBFB, 12-stop cool-neutral ramp proven from binary literals */
+  --n0:  #111113;   /* page background */
+  --n1:  #191a1f;   /* glass bg base   */
+  --n2:  #1f2025;   /* surface raised  */
+  --n3:  #22232a;   /* shimmer base    */
+  --n4:  #26272d;   /* border-subtle   */
+  --n5:  #2e2f36;   /* shimmer shine   */
+  --n6:  #36373f;   /* disabled        */
+  --n7:  #5c5e6a;   /* placeholder     */
+  --n8:  #9093a0;   /* secondary text  */
+  --n9:  #c5cad1;   /* body text       */
+  --n10: #d4d7dc;   /* primary text    */
+  --n11: #ececef;   /* high-contrast   */
+  --n12: #fbfbfb;   /* white surface   */
+
+  /* ── Accent (default #3380FF; user-pickable) ── */
+  /* "Sets the cursor and app accent color" — drives caret, selection, gel */
+  --accent:          #3380ff;
+  --accent-light:    #70b8ff;
+  --accent-lightest: #d6e7ff;
+  --accent-gel:      color-mix(in oklab, var(--accent) 85%, transparent);
+
+  /* ── Status ── */
+  --ok:    #26c281;
+  --warn:  #ffb224;
+  --error: #e5484d;
+
+  /* ── Radius scale (from composerCornerRadius, previewCornerRadius, etc.) ── */
+  --r-chip:     8px;   /* status chips, keycaps, skeleton bars         */
+  --r-card:     14px;  /* suggested/task cards, cowork blocks           */
+  --r-composer: 18px;  /* text input surface                            */
+  --r-preview:  12px;  /* artifact thumbnails                           */
+  --r-sheet:    22px;  /* HomeSpace sheet / modal surfaces              */
+  --r-pill:     999px; /* HUD handle, follow-up pills, use-case pills   */
+  --r-notch:    20px;  /* top-edge docked pill (symmetric, no hardware notch) */
+
+  /* ── Glass / material ── */
+  --glass-bg:     rgba(25, 26, 31, 0.62);
+  --glass-tint:   color-mix(in oklab, var(--accent) 8%, transparent);
+  --glass-blur:   24px;
+  --glass-stroke: 1px solid rgba(255,255,255, 0.08);
+  --glass-inner:  inset 0 1px 0 rgba(255,255,255, 0.10);
+  --glass-shadow: 0 16px 48px rgba(0,0,0, 0.55);
+  --glass-fallback: #1f2025; /* solid fallback when backdrop-filter unavailable */
+
+  /* ── Gel finish (ClickyGelButton / GelTint system) ── */
+  --gel-tint:   color-mix(in oklab, var(--accent) 70%, transparent);
+  --gel-shadow: inset 0 1px 0 rgba(255,255,255, 0.55),
+                inset 0 -2px 3px rgba(0,0,0, 0.25),
+                0 1px 2px rgba(0,0,0, 0.35);
+  --gel-active-scale: 0.96;
+
+  /* ── Elevation shadows ── */
+  --sh-chip:    0 1px 2px rgba(0,0,0, 0.35);
+  --sh-card:    0 8px 24px rgba(0,0,0, 0.40);
+  --sh-float:   0 16px 48px rgba(0,0,0, 0.55), 0 0 0 1px rgba(255,255,255,0.05);
+
+  /* ── Typography ── */
+  /* Windows Segoe UI Variable with rounded feel via weight + tracking   */
+  --font-ui:      "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --font-mono:    "Cascadia Code", "Consolas", ui-monospace, monospace;
+
+  /* Scale: 11 caption / 12 chip / 13 secondary / 14 body / 16 title / 20 sheet / 28 hero */
+  --fs-caption:   11px;
+  --fs-chip:      12px;
+  --fs-secondary: 13px;
+  --fs-body:      14px;
+  --fs-title:     16px;
+  --fs-sheet:     20px;
+  --fs-hero:      28px;
+
+  /* ── Motion (spring values for CSS @property or Motion One) ── */
+  /* Default spring: response ~.32, damping .85 → stiffness 380, damping 32 */
+  --spring-stiffness:        380;
+  --spring-damping:           32;
+  /* Interactive drag: stiffness 520, damping 40 */
+  --spring-interactive-s:    520;
+  --spring-interactive-d:     40;
+  /* Reveal expand: stiffness 300, damping 26 */
+  --spring-expand-s:         300;
+  --spring-expand-d:          26;
+
+  /* CSS transition shorthands (non-spring fallbacks) */
+  --t-fast:   120ms cubic-bezier(0.16,1,0.3,1);
+  --t-normal: 240ms cubic-bezier(0.16,1,0.3,1);
+  --t-slow:   520ms cubic-bezier(0.16,1,0.3,1);
+
+  /* ── Dwell ring ── */
+  --dwell-duration: 350ms;
+
+  /* ── Shimmer ── */
+  --shimmer-base:  #22232a;
+  --shimmer-shine: #2e2f36;
+
+  /* ── Spacing ── */
+  --sp-1:  4px;
+  --sp-2:  8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+
+  /* ── Animation kill-switch ── */
+  /* Mirrors ClickyHomeSpaceClickyAnimationsEnabled. Set via JS on Settings toggle. */
+  --animations-enabled: 1;
+}
+
+/* Reduced-motion: ambient off, reactive stays. */
+/* Mirrors: "Idle blinks and breathing off. Hover and task expressions always respond." */
+@media (prefers-reduced-motion: reduce) {
+  :root { --animations-enabled: 0; }
+  .ambient-only { animation: none !important; transition: none !important; }
+}
+
+/* ── Base resets ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; }
+
+body {
+  background: var(--n0);
+  color: var(--n10);
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  caret-color: var(--accent);
+  /* accent drives text selection too */
+}
+
+::selection { background: color-mix(in oklab, var(--accent) 35%, transparent); color: inherit; }
+
+/* ── Glass utility ── */
+.glass {
+  background: linear-gradient(var(--glass-tint), var(--glass-tint)), var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  border: var(--glass-stroke);
+  box-shadow: var(--glass-inner), var(--glass-shadow);
+}
+/* Fallback when transparent window disabled */
+@supports not (backdrop-filter: blur(1px)) {
+  .glass { background: var(--glass-fallback); }
+}
+
+/* ── Gel utility ── */
+.gel {
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--gel-tint) 85%, white) 0%,
+    var(--gel-tint) 55%,
+    color-mix(in oklab, var(--gel-tint) 80%, black) 100%
+  );
+  box-shadow: var(--gel-shadow);
+  cursor: pointer;
+  user-select: none;
+  transition: transform var(--t-fast);
+}
+.gel:active { transform: scale(var(--gel-active-scale)); }
+
+/* ── Shimmer skeleton ── */
+@keyframes shimmer {
+  from { background-position: 200% center; }
+  to   { background-position: -200% center; }
+}
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--shimmer-base) 0%,
+    var(--shimmer-shine) 50%,
+    var(--shimmer-base) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+  border-radius: var(--r-chip);
+}
+/* Freeze skeletons when animations disabled */
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
+
+/* ── Breathing dot ── */
+@keyframes breathe {
+  0%, 100% { transform: scale(.85); opacity: .6; }
+  50%       { transform: scale(1);   opacity: 1;  }
+}
+.breathing-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: breathe 1.6s ease-in-out infinite alternate;
+}
+@media (prefers-reduced-motion: reduce) { .breathing-dot { animation: none; opacity: 1; } }
+
+/* ── Pill / chip base ── */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-chip);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+/* ── Card base ── */
+.card {
+  border-radius: var(--r-card);
+  background: var(--n2);
+  box-shadow: var(--sh-card);
+  overflow: hidden;
+}
