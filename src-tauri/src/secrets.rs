@@ -12,7 +12,7 @@
 //! `Ok(None)`, so `key_has` is get-and-catch via pure mapping fns below.
 //!
 //! Test note: `tauri::test::mock_builder().build()` cannot execute on this
-//! host — any binary calling it dies at startup with STATUS_ENTRYPOINT_NOT_FOUND
+//! host â€” any binary calling it dies at startup with STATUS_ENTRYPOINT_NOT_FOUND
 //! (see task-4-report.md: `muda`'s load-time `TaskDialogIndirect` import needs
 //! comctl32 v6, which manifest-less test binaries don't get). The roundtrip
 //! test therefore drives the same `keyring::Entry` calls the plugin makes
@@ -23,7 +23,7 @@ use tauri::{AppHandle, Runtime};
 use tauri_plugin_keyring::KeyringExt;
 
 /// Production keyring service for Peek secrets.
-pub const KEYRING_SERVICE: &str = "com.peek.app";
+pub const KEYRING_SERVICE: &str = "com.tazamaai.app";
 
 /// Keyring account for a provider name.
 fn account_for(provider: &str) -> String {
@@ -146,13 +146,13 @@ mod tests {
     use super::*;
 
     /// Test-only keyring service prefix: never touches production entries.
-    const TEST_SERVICE: &str = "com.peek.app.test";
+    const TEST_SERVICE: &str = "com.tazamaai.app.test";
     const TEST_PROVIDER: &str = "roundtrip-provider";
     const TEST_KEY: &str = "test-key-abc123";
 
     /// Lookup mirroring the plugin's `get_password` body line-for-line
     /// (`Entry::new(..)?`, misses fold to `None`), but callable without an
-    /// `AppHandle` (mock apps cannot run on this host — see module docs).
+    /// `AppHandle` (mock apps cannot run on this host â€” see module docs).
     fn direct_lookup(service: &str, provider: &str) -> Result<Option<String>, String> {
         Ok(keyring::Entry::new(service, &account_for(provider))
             .map_err(|e| e.to_string())?
@@ -182,8 +182,8 @@ mod tests {
 
     #[test]
     fn service_constants_use_test_prefix() {
-        assert_eq!(KEYRING_SERVICE, "com.peek.app");
-        assert_eq!(TEST_SERVICE, "com.peek.app.test");
+        assert_eq!(KEYRING_SERVICE, "com.tazamaai.app");
+        assert_eq!(TEST_SERVICE, "com.tazamaai.app.test");
         assert_ne!(TEST_SERVICE, KEYRING_SERVICE);
     }
 
@@ -238,3 +238,4 @@ mod tests {
         result.expect("keyring roundtrip");
     }
 }
+

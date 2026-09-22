@@ -1,12 +1,12 @@
 //! Rust-side provider AI calls (Task 5).
 //!
 //! All provider keys come ONLY from the OS keyring via
-//! [`crate::secrets::read_key`] — never from JS arguments, never logged.
+//! [`crate::secrets::read_key`] â€” never from JS arguments, never logged.
 //! Transport/API failures map to `"could not reach <provider>: ..."` and
 //! never include key material or full response bodies.
 //!
 //! Test note (R13): no `tauri::test::mock_builder()` anywhere (it crashes the
-//! loader on this host — see `secrets.rs` module docs). Unit tests cover the
+//! loader on this host â€” see `secrets.rs` module docs). Unit tests cover the
 //! pure builders/mappers, and async tests drive the `*_with_base` helpers
 //! against a local `wiremock` server with the same headers/bodies the
 //! commands send to production.
@@ -19,7 +19,7 @@ use crate::AppState;
 
 /// A single chat message (frontend shape).
 #[derive(Debug, Clone, Deserialize)]
-pub struct ChatMsg {
+pub(crate) struct ChatMsg {
     pub role: String,
     pub content: String,
 }
@@ -32,7 +32,7 @@ pub const NVIDIA_BASE: &str = "https://integrate.api.nvidia.com";
 pub const FISH_BASE: &str = "https://api.fish.audio";
 
 /// Resolve a provider name to its API base URL.
-pub fn base_for(provider: &str) -> Result<&'static str, String> {
+pub(crate) fn base_for(provider: &str) -> Result<&'static str, String> {
     match provider {
         "anthropic" => Ok(ANTHROPIC_BASE),
         "openai" => Ok(OPENAI_BASE),
@@ -45,7 +45,7 @@ pub fn base_for(provider: &str) -> Result<&'static str, String> {
 
 /// Anthropic `/v1/messages` body: `model`, `max_tokens: 1024`,
 /// `messages: [{role, content}]`. Pure (no network, no key).
-pub fn anthropic_body(model: &str, messages: &[(String, String)]) -> serde_json::Value {
+pub(crate) fn anthropic_body(model: &str, messages: &[(String, String)]) -> serde_json::Value {
     serde_json::json!({
         "model": model,
         "max_tokens": 1024,
@@ -58,7 +58,7 @@ pub fn anthropic_body(model: &str, messages: &[(String, String)]) -> serde_json:
 
 /// OpenAI-compatible `/v1/chat/completions` body: `model`, `messages`.
 /// Pure (no network, no key).
-pub fn openai_body(model: &str, messages: &[(String, String)]) -> serde_json::Value {
+pub(crate) fn openai_body(model: &str, messages: &[(String, String)]) -> serde_json::Value {
     serde_json::json!({
         "model": model,
         "messages": messages
@@ -87,7 +87,7 @@ fn short_reason(provider: &str, detail: impl std::fmt::Display) -> String {
 
 /// Extract assistant text from an Anthropic `/v1/messages` response
 /// (`content[0].text`).
-pub fn extract_anthropic_text(
+pub(crate) fn extract_anthropic_text(
     provider: &str,
     body: &serde_json::Value,
 ) -> Result<String, String> {
@@ -99,7 +99,7 @@ pub fn extract_anthropic_text(
 
 /// Extract assistant text from an OpenAI-compatible response
 /// (`choices[0].message.content`).
-pub fn extract_openai_text(
+pub(crate) fn extract_openai_text(
     provider: &str,
     body: &serde_json::Value,
 ) -> Result<String, String> {
@@ -111,7 +111,7 @@ pub fn extract_openai_text(
 
 /// Map an HTTP status from a cheap `key_test` probe: 2xx -> `Ok(true)`,
 /// 401/403 -> `Ok(false)`, anything else -> transport-style `Err`.
-pub fn map_key_test(provider: &str, status: u16) -> Result<bool, String> {
+pub(crate) fn map_key_test(provider: &str, status: u16) -> Result<bool, String> {
     if (200..300).contains(&status) {
         Ok(true)
     } else if status == 401 || status == 403 {
@@ -128,7 +128,12 @@ fn http_client(state: &State<'_, AppState>) -> Result<reqwest::Client, String> {
         .lock()
         .map_err(|e| format!("http client unavailable: {e}"))?;
     if guard.is_none() {
-        *guard = Some(reqwest::Client::new());
+        *guard = Some(
+            reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .map_err(|e| format!("http client build failed: {e}"))?,
+        );
     }
     Ok(guard.clone().expect("client just built"))
 }
@@ -165,7 +170,7 @@ fn encode_b64(bytes: &[u8]) -> String {
 /// Anthropic chat against an explicit base (commands pass the production
 /// base; tests pass the wiremock URL). Sends `x-api-key` +
 /// `anthropic-version: 2023-06-01`.
-pub async fn anthropic_chat_with_base(
+pub(crate) async fn anthropic_chat_with_base(
     client: &reqwest::Client,
     base: &str,
     key: &str,
@@ -188,7 +193,7 @@ pub async fn anthropic_chat_with_base(
 /// OpenAI-compatible chat against an explicit base (`Authorization: Bearer`).
 /// Covers OpenAI, Groq, and NVIDIA (all OpenAI-shape).
 #[allow(clippy::too_many_arguments)]
-pub async fn openai_chat_with_base(
+pub(crate) async fn openai_chat_with_base(
     client: &reqwest::Client,
     base: &str,
     key: &str,
@@ -209,7 +214,7 @@ pub async fn openai_chat_with_base(
 
 /// Fish Audio speech against an explicit base: POST `{base}/v1/tts` with
 /// Bearer auth. Returns raw audio bytes (commands base64-encode them).
-pub async fn fish_speak_with_base(
+pub(crate) async fn fish_speak_with_base(
     client: &reqwest::Client,
     base: &str,
     key: &str,
@@ -233,7 +238,7 @@ pub async fn fish_speak_with_base(
 /// Cheap per-provider key probe against an explicit base: models-list GET
 /// where available (Anthropic `/v1/models` with its key headers, everyone
 /// else `/v1/models` with Bearer). Maps via [`map_key_test`].
-pub async fn key_probe_with_base(
+pub(crate) async fn key_probe_with_base(
     client: &reqwest::Client,
     base: &str,
     key: &str,
@@ -545,3 +550,5 @@ mod tests {
         assert!(!err.contains(SENTINEL_KEY), "key leak: {err}");
     }
 }
+
+
