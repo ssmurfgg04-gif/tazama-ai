@@ -1,137 +1,111 @@
 /**
  * Sound engine — Tazama AI
- *
- * Mirrors HeyClicky's ChimePlaybackEngine:
- *   - Single AudioContext, resumes on first user gesture (WebView2 autoplay rules)
- *   - ClickyChimeWarmer: pre-decodes buffers on startup
+ * Real WAV chimes (generated, ~395KB total), better than HeyClicky's ~1.5MB.
+ * Architecture mirrors HeyClicky's ChimePlaybackEngine:
+ *   - Pre-decodes all buffers at startup (ClickyChimeWarmer pattern)
  *   - Per-response guards (hasPlayedTextReceiveChimeForCurrentResponse)
- *   - Master toggle (ClickyNotchSoundsEnabled → stored in localStorage)
- *   - Muted-speaker detection: check AudioContext.state and system volume
- *
- * Sprite map: ui-sprite.ogg (Opus, not yet bundled — stub uses oscillator tones)
- * Each cue name maps to a [startSeconds, durationSeconds] pair in the sprite.
- *
- * See docs/design/heyclicky-ui-brief.md §4 for the full sound map.
+ *   - Master toggle (localStorage "sound-enabled")
+ *   - Muted-speaker detection
+ *   - WebView2 autoplay: resumes on first user gesture
  */
 
-interface CueDef { start: number; duration: number; }
-
-// Sprite cue map (placeholder — fill in after ui-sprite.ogg is authored)
-const CUE_MAP: Record<string, CueDef> = {
-  "agent-launch":      { start:  0.00, duration: 0.70 },
-  "agent-done":        { start:  0.75, duration: 0.80 },
-  "agent-needs-you":   { start:  1.60, duration: 0.75 },
-  "agent-close":       { start:  2.40, duration: 0.70 },
-  "text-open":         { start:  3.15, duration: 0.60 },
-  "text-send":         { start:  3.80, duration: 0.45 },
-  "text-close":        { start:  4.30, duration: 0.65 },
-  "tapback":           { start:  5.00, duration: 0.30 },
-  "skill-up":          { start:  5.35, duration: 0.60 },
-  "skill-down":        { start:  6.00, duration: 0.70 },
-  "reveal-boot":       { start:  6.75, duration: 0.90 },
-  "home-reveal":       { start:  7.70, duration: 1.00 },
-  "connection-question":{ start: 8.75, duration: 0.80 },
-  "enter":             { start:  9.60, duration: 0.20 },
-};
+const CHIMES = [
+  "agent-launch","agent-done","agent-needs-you","agent-close",
+  "text-open","text-send","text-close","text-receive",
+  "tapback","skill-up","skill-down","reveal-boot",
+  "home-reveal","connection-question","enter",
+] as const;
+type ChimeName = typeof CHIMES[number];
 
 class SoundEngine {
   private ctx: AudioContext | null = null;
-  private masterGain: GainNode | null = null;
-  private spriteBuffer: AudioBuffer | null = null;
+  private master: GainNode | null = null;
+  private buffers = new Map<ChimeName, AudioBuffer>();
+  private guards  = new Map<ChimeName, number>();
   private enabled = localStorage.getItem("sound-enabled") !== "false";
-  private guards: Map<string, number> = new Map(); // name → last play time
-  private readonly GUARD_MS = 500; // debounce per cue
+  private warmed  = false;
+  private readonly GUARD_MS = 400;
 
-  /** Resume/create AudioContext on first user gesture */
+  // Pre-decode all buffers (ClickyChimeWarmer pattern)
+  private async warm(): Promise<void> {
+    if (this.warmed || !this.ctx) return;
+    this.warmed = true;
+    await Promise.allSettled(
+      CHIMES.map(async name => {
+        try {
+          const resp = await fetch(`/assets/sounds/${name}.wav`);
+          if (!resp.ok) return;
+          const buf = await resp.arrayBuffer();
+          this.buffers.set(name, await this.ctx!.decodeAudioData(buf));
+        } catch { /* non-critical — oscillator fallback */ }
+      })
+    );
+  }
+
   async resume(): Promise<void> {
     if (!this.ctx) {
-      this.ctx = new AudioContext({ sampleRate: 48000 });
-      this.masterGain = this.ctx.createGain();
-      this.masterGain.connect(this.ctx.destination);
-      this.masterGain.gain.value = this.enabled ? 1 : 0;
-      // Pre-warm (ClickyChimeWarmer pattern): load sprite in background
-      this.loadSprite().catch(() => null);
+      this.ctx = new AudioContext({ sampleRate: 44100 });
+      this.master = this.ctx.createGain();
+      this.master.gain.value = this.enabled ? 0.8 : 0;
+      this.master.connect(this.ctx.destination);
+      this.warm();
     }
     if (this.ctx.state === "suspended") await this.ctx.resume();
   }
 
-  private async loadSprite(): Promise<void> {
-    // Sprite not yet bundled — this is the wiring stub.
-    // When ui-sprite.ogg exists at the path below, uncomment:
-    // const res = await fetch("/ui-sprite.ogg");
-    // const buf = await res.arrayBuffer();
-    // this.spriteBuffer = await this.ctx!.decodeAudioData(buf);
-  }
-
-  /** Play a UI cue by name. Falls back to a short oscillator tone if no sprite. */
   play(name: string): void {
     if (!this.enabled) return;
     const now = Date.now();
-    const last = this.guards.get(name) ?? 0;
-    if (now - last < this.GUARD_MS) return; // per-response guard
-    this.guards.set(name, now);
-
-    this.resume().then(() => {
-      if (this.spriteBuffer && CUE_MAP[name]) {
-        this.playFromSprite(name);
-      } else {
-        this.playTone(name);
-      }
-    });
+    const last = this.guards.get(name as ChimeName) ?? 0;
+    if (now - last < this.GUARD_MS) return;
+    this.guards.set(name as ChimeName, now);
+    this.resume().then(() => this.playBuffer(name as ChimeName));
   }
 
-  private playFromSprite(name: string): void {
-    if (!this.ctx || !this.spriteBuffer || !this.masterGain) return;
-    const cue = CUE_MAP[name];
-    const src = this.ctx.createBufferSource();
-    src.buffer = this.spriteBuffer;
-    src.connect(this.masterGain);
-    src.start(0, cue.start, cue.duration);
+  private playBuffer(name: ChimeName): void {
+    if (!this.ctx || !this.master) return;
+    const buf = this.buffers.get(name);
+    if (buf) {
+      const src = this.ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(this.master);
+      src.start();
+    } else {
+      // Oscillator fallback (silent if WAV not loaded)
+      this.oscillatorFallback(name);
+    }
   }
 
-  /** Oscillator fallback — pitches approximate the role of each cue */
-  private playTone(name: string): void {
-    if (!this.ctx || !this.masterGain) return;
-    const TONES: Record<string, number> = {
-      "agent-launch":  880,
-      "agent-done":    1047,
-      "agent-needs-you": 660,
-      "agent-close":   523,
-      "text-open":     784,
-      "text-send":     988,
-      "text-close":    698,
-      "tapback":       1175,
-      "skill-up":      1047,
-      "skill-down":    622,
-      "reveal-boot":   1047,
-      "home-reveal":   880,
-      "connection-question": 740,
-      "enter":         1319,
+  private oscillatorFallback(name: ChimeName): void {
+    if (!this.ctx || !this.master) return;
+    const PITCHES: Partial<Record<ChimeName, number>> = {
+      "agent-launch": 523, "agent-done": 659, "agent-needs-you": 880,
+      "agent-close": 440, "text-open": 1047, "text-send": 988,
+      "text-close": 698, "text-receive": 784, "tapback": 1319,
+      "skill-up": 1047, "skill-down": 622, "reveal-boot": 1047,
+      "home-reveal": 880, "connection-question": 740, "enter": 1319,
     };
-    const freq = TONES[name] ?? 880;
+    const freq = PITCHES[name] ?? 880;
     const osc  = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
-
     osc.frequency.value = freq;
     osc.type = "sine";
-    gain.gain.setValueAtTime(0.12, this.ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.18);
-
+    gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.2);
     osc.connect(gain);
-    gain.connect(this.masterGain);
+    gain.connect(this.master);
     osc.start();
-    osc.stop(this.ctx.currentTime + 0.20);
+    osc.stop(this.ctx.currentTime + 0.22);
   }
 
   setEnabled(v: boolean): void {
     this.enabled = v;
     localStorage.setItem("sound-enabled", String(v));
-    if (this.masterGain) {
-      this.masterGain.gain.setTargetAtTime(v ? 1 : 0, this.ctx!.currentTime, 0.05);
+    if (this.master && this.ctx) {
+      this.master.gain.setTargetAtTime(v ? 0.8 : 0, this.ctx.currentTime, 0.05);
     }
   }
 
-  /** True if the system audio context is running and not muted */
   isMuted(): boolean {
     return !this.ctx || this.ctx.state !== "running" || !this.enabled;
   }
@@ -139,12 +113,9 @@ class SoundEngine {
 
 export const soundEngine = new SoundEngine();
 
-// Wire global event bus
-document.addEventListener("tazama:sound", (e: Event) => {
-  soundEngine.play((e as CustomEvent<string>).detail);
-});
-document.addEventListener("tazama:sound-toggle", (e: Event) => {
-  soundEngine.setEnabled((e as CustomEvent<boolean>).detail);
-});
-// Resume on first gesture
+// Event bus
+document.addEventListener("tazama:sound",        e => soundEngine.play((e as CustomEvent<string>).detail));
+document.addEventListener("tazama:sound-toggle",  e => soundEngine.setEnabled((e as CustomEvent<boolean>).detail));
+
+// Resume on first gesture (WebView2 autoplay policy)
 document.addEventListener("pointerdown", () => soundEngine.resume(), { once: true });
