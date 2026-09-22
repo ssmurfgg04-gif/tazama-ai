@@ -238,19 +238,16 @@ jobs:
 
       # ── 6b. Quiet the desktop ───────────────────────────────────────────
       # The runner host console ("C:\ProgramData\GitHub\Host" JSON log spew)
-      # photobombs every screenshot. Minimize everything, then hide
-      # console-class windows so evidence shows ONLY the app.
-      # NOTE: P/Invoke signatures live on single lines — multi-line
-      # here-strings break the YAML block scalar.
+      # photobombs every screenshot. Hide console-class windows and dismiss
+      # stray runner dialogs, then pin Tazama topmost so evidence shows ONLY
+      # the app. NOTE: no MinimizeAll here — it minimized Tazama too and the
+      # restore did not survive the session (v0.2.0 evidence bug).
+      # P/Invoke signatures live on single lines — multi-line here-strings
+      # break the YAML block scalar.
       - name: Quiet the desktop (hide runner console)
         run: |
           $ErrorActionPreference = "Continue"
-          # 1. Minimize every window (taskbar keeps them reachable, off-screen)
-          try { (New-Object -ComObject Shell.Application).MinimizeAll() } catch {
-            Write-Host "MinimizeAll failed (non-fatal): $_"
-          }
-          Start-Sleep -Seconds 1
-          # 2. Sweep ALL top-level windows and hide console-class ones
+          # 1. Sweep ALL top-level windows: hide console-class ones
           #    (ConsoleWindowClass = classic console, CASCADIA_* = Terminal).
           try {
             $sig = '[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int n); ' +
@@ -280,20 +277,37 @@ jobs:
             [void][Native.QuietWin]::EnumWindows($cb, [IntPtr]::Zero)
             Write-Host "Hid $hidden console/runner window(s)."
           } catch { Write-Host "Console hide failed (non-fatal): $_" }
-          # 3. Restore + re-raise Tazama (MinimizeAll minimized it too).
+          # 2. Dismiss stray runner dialogs ("System Properties" paging-file
+          #    notice photobombs the desktop on this image).
+          try {
+            $sig3 = '[DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindow(string cls, string title); ' +
+                    '[DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint m, IntPtr w, IntPtr l);'
+            Add-Type -Namespace Native -Name DialogWin -MemberDefinition $sig3
+            $WM_CLOSE = [UInt16]0x0010
+            foreach ($t in @('System Properties', 'Windows Activation', 'Script Error')) {
+              $h = [Native.DialogWin]::FindWindow('#32770', $t)
+              if ($h -ne [IntPtr]::Zero) {
+                [void][Native.DialogWin]::PostMessage($h, $WM_CLOSE, [IntPtr]::Zero, [IntPtr]::Zero)
+                Write-Host "Dismissed dialog: $t"
+              }
+            }
+          } catch { Write-Host "Dialog dismiss failed (non-fatal): $_" }
+          # 3. Pin Tazama topmost at (12,12) 420x700 so nothing covers it.
           Start-Sleep -Milliseconds 800
           try {
             $tazama = Get-Process | Where-Object { $_.ProcessName -like "*azama*" -and $_.MainWindowHandle -ne 0 } | Select-Object -First 1
             if ($tazama) {
-              $sig2 = '[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int n); ' +
-                      '[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);'
+              $sig2 = '[DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags); ' +
+                      '[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int n);'
               Add-Type -Namespace Native -Name FocusWin -MemberDefinition $sig2
-              [Native.FocusWin]::ShowWindow($tazama.MainWindowHandle, 9) | Out-Null   # SW_RESTORE
+              $HWND_TOPMOST = New-Object IntPtr -ArgumentList (-1)
+              $SWP_SHOWWINDOW = 0x0040
+              [Native.FocusWin]::ShowWindow($tazama.MainWindowHandle, 9) | Out-Null  # SW_RESTORE
               Start-Sleep -Milliseconds 300
-              [Native.FocusWin]::SetForegroundWindow($tazama.MainWindowHandle) | Out-Null
-              Write-Host "Tazama restored + focused after desktop quiet."
+              [Native.FocusWin]::SetWindowPos($tazama.MainWindowHandle, $HWND_TOPMOST, 12, 12, 420, 700, $SWP_SHOWWINDOW) | Out-Null
+              Write-Host "Tazama pinned topmost at (12,12) 420x700."
             }
-          } catch { Write-Host "Refocus failed (non-fatal): $_" }
+          } catch { Write-Host "Pin failed (non-fatal): $_" }
         shell: pwsh
 
       # ── 7. UIA drive (best-effort, never fatal) ─────────────────────────
