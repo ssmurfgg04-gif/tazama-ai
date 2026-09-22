@@ -2,6 +2,7 @@ use std::sync::Mutex;
 use tauri::Manager;
 
 mod caps;
+mod migrate;
 mod providers;
 mod secrets;
 
@@ -21,6 +22,7 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_keyring::init())
         .invoke_handler(tauri::generate_handler![
+            migrate::migrate_legacy_keys,
             secrets::key_set,
             secrets::key_has,
             secrets::key_remove,
