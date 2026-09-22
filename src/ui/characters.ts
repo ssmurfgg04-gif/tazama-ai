@@ -2,22 +2,36 @@
  * Characters — Tazama AI "cast your buddy" system
  *
  * Inspired by the Gleam expert-creation flow (cast a character → persona →
- * skills → look) and HeyClicky's kaomoji personality. Every character here is
- * an original archetype — no copyrighted names or artwork, just vibes:
- * search a family, pick a buddy, and Tazama takes on their voice, accent
- * colour, mascot mood and starter prompts.
+ * skills → look) and HeyClicky's kaomoji personality. Two rosters share one
+ * stage: the ORIGINAL cast (in-house archetypes) and the CHILDHOOD cast —
+ * real Saturday-morning legends from Nickelodeon / Cartoon Network /
+ * Disney Channel, complete with web-sourced avatar art, voice-actor credits,
+ * signature catchphrases and a per-character TTS voice profile.
  *
- * The cast lives in code (zero network, zero assets), persists to
- * localStorage, and feeds three integration points:
+ * The cast persists to localStorage and feeds four integration points:
  *   - HomeSpace header buddy chip (buildBuddyChip)
  *   - Chat system-prompt persona (personaMessages)
- *   - Mascot iris colour + greeting copy (applyCharacter)
+ *   - Mascot accent + greeting copy (applyCharacter)
+ *   - Web Speech voice acting (speakCharacter)
  */
+
+import { CHILDHOOD_CAST, avatarFor } from "./childhood-cast.js";
+
+export interface VoiceMeta {
+  actor: string;          // the original voice behind the character
+  gender: "male" | "female"; // TTS voice-pick hint
+  style: string;          // how they sound, in words
+  catchphrases: string[]; // the lines everyone remembers
+  clip: string;           // one iconic line, speakable via TTS
+  clipContext: string;    // where the clip lives in show history
+  tts: { pitch: number; rate: number }; // Web Speech tuning
+}
 
 export interface CharacterDef {
   id: string;
   name: string;
   family: string;        // the "show" — archetype family
+  era?: string;          // e.g. "Nickelodeon · 1999"
   craft: string;         // one-line role, e.g. "chaos engineer"
   face: string;          // kaomoji avatar (full — name tag)
   chipFace: string;      // compact kaomoji — chip, cards, detail
@@ -27,6 +41,7 @@ export interface CharacterDef {
   greeting: string;      // line shown when cast
   accent: string;        // hex — drives --accent while active
   suggestions: string[]; // 3 personalised starter prompts
+  voiceMeta?: VoiceMeta; // voice-actor credit + TTS profile (childhood cast)
 }
 
 /* ─── The cast ────────────────────────────────────────────────────────────────
@@ -34,7 +49,7 @@ export interface CharacterDef {
  * Morning · Fantasy Quest · Detective Noir · Deep Sea Radio · Meadowcore
  * ────────────────────────────────────────────────────────────────────────────*/
 
-export const CAST: CharacterDef[] = [
+const ORIGINAL_CAST: CharacterDef[] = [
   {
     id: "tazama-classic",
     chipFace: "◉ᴗ◉",
@@ -341,8 +356,86 @@ export const CAST: CharacterDef[] = [
   },
 ];
 
-/* ─── State ─── */
+/** Full cast — childhood legends first (the nostalgia wall), originals after. */
+export const CAST: CharacterDef[] = [...CHILDHOOD_CAST, ...ORIGINAL_CAST];
 
+/* ─── Voice acting (Web Speech) ───
+ * Each childhood character carries a pitch/rate profile + voice-gender hint;
+ * speakCharacter() picks the closest matching system voice and performs the
+ * line. Gracefully no-ops on systems without speechSynthesis or voices. */
+
+let cachedVoices: SpeechSynthesisVoice[] = [];
+
+function refreshVoices(): void {
+  cachedVoices = typeof speechSynthesis !== "undefined" ? speechSynthesis.getVoices() : [];
+}
+if (typeof speechSynthesis !== "undefined") {
+  refreshVoices();
+  speechSynthesis.addEventListener?.("voiceschanged", refreshVoices);
+}
+
+function pickVoice(gender: "male" | "female"): SpeechSynthesisVoice | undefined {
+  if (!cachedVoices.length) refreshVoices();
+  if (!cachedVoices.length) return undefined;
+  const en = cachedVoices.filter(v => /^en([-_]|$)/i.test(v.lang));
+  const pool = en.length ? en : cachedVoices;
+  const femaleHints = ["female", "zira", "samantha", "victoria", "karen", "moira", "tessa", "fiona", "google uk english female", "google us english"];
+  const maleHints = ["male", "david", "mark", "daniel", "alex", "fred", "rishi", "google uk english male"];
+  const hints = gender === "female" ? femaleHints : maleHints;
+  for (const h of hints) {
+    const hit = pool.find(v => v.name.toLowerCase().includes(h));
+    if (hit) return hit;
+  }
+  return pool[0];
+}
+
+/** Speak a character line with their voice profile. Returns false when TTS is
+ * unavailable (UI hides the play button in that case). */
+export function speakCharacter(c: CharacterDef, text?: string): boolean {
+  if (typeof speechSynthesis === "undefined") return false;
+  const line = (text ?? c.voiceMeta?.clip ?? c.greeting)
+    .replace(/\*[^*]*\*/g, " ") // drop *stage directions* before speaking
+    .trim();
+  if (!line) return false;
+  const meta = c.voiceMeta;
+  const u = new SpeechSynthesisUtterance(line);
+  u.pitch = Math.min(2, Math.max(0, meta?.tts.pitch ?? 1));
+  u.rate = Math.min(10, Math.max(0.1, meta?.tts.rate ?? 1));
+  u.volume = 1;
+  u.lang = "en-US";
+  const v = pickVoice(meta?.gender ?? "male");
+  if (v) u.voice = v;
+  speechSynthesis.cancel();
+  speechSynthesis.speak(u);
+  return true;
+}
+
+export function ttsAvailable(): boolean {
+  if (typeof speechSynthesis === "undefined") return false;
+  refreshVoices();
+  return cachedVoices.length > 0;
+}
+
+/* ─── Face renderer ───
+ * Avatar image when we have one, kaomoji otherwise. Used by the buddy chip,
+ * the grid, the detail pane and (via homespace) the name-tag. */
+export function renderBuddyFace(c: CharacterDef, cls: string): HTMLElement {
+  const url = avatarFor(c.id);
+  if (url) {
+    const img = document.createElement("img");
+    img.className = `${cls} has-avatar`;
+    img.src = url;
+    img.alt = c.name;
+    img.draggable = false;
+    return img;
+  }
+  const span = document.createElement("span");
+  span.className = cls;
+  span.textContent = c.chipFace;
+  return span;
+}
+
+/* ─── State ─── */
 const STORAGE_KEY = "tazama-character";
 let activeId: string = localStorage.getItem(STORAGE_KEY) || "tazama-classic";
 
@@ -381,9 +474,7 @@ export function buildBuddyChip(): HTMLElement {
   chip.className = "buddy-chip";
   chip.title = "Cast a different buddy";
 
-  const face = document.createElement("span");
-  face.className = "buddy-chip-face";
-  face.textContent = c.chipFace;
+  const face = renderBuddyFace(c, "buddy-chip-face");
 
   const meta = document.createElement("span");
   meta.className = "buddy-chip-meta";
@@ -493,6 +584,9 @@ function filteredCast(): CharacterDef[] {
       c.name.toLowerCase().includes(q) ||
       c.craft.toLowerCase().includes(q) ||
       c.family.toLowerCase().includes(q) ||
+      (c.era ?? "").toLowerCase().includes(q) ||
+      (c.voiceMeta?.actor ?? "").toLowerCase().includes(q) ||
+      (c.voiceMeta?.catchphrases ?? []).some(p => p.toLowerCase().includes(q)) ||
       c.traits.some(t => t.includes(q));
     return inFamily && inQuery;
   });
@@ -506,9 +600,7 @@ function renderGrid(grid: HTMLElement, detail: HTMLElement): void {
     card.className = "character-card" + (c.id === active.id ? " is-active" : "");
     card.style.setProperty("--char-accent", c.accent);
 
-    const face = document.createElement("span");
-    face.className = "character-face";
-    face.textContent = c.chipFace;
+    const face = renderBuddyFace(c, "character-face");
 
     const name = document.createElement("span");
     name.className = "character-name";
@@ -544,9 +636,7 @@ function renderDetail(detail: HTMLElement, c: CharacterDef): void {
   void detail.offsetWidth; // restart animation
   detail.classList.add("detail-pop");
 
-  const face = document.createElement("span");
-  face.className = "detail-face";
-  face.textContent = c.chipFace;
+  const face = renderBuddyFace(c, "detail-face");
 
   const info = document.createElement("div");
   info.className = "detail-info";
@@ -558,7 +648,7 @@ function renderDetail(detail: HTMLElement, c: CharacterDef): void {
   name.textContent = c.name;
   const fam = document.createElement("span");
   fam.className = "detail-family";
-  fam.textContent = c.family;
+  fam.textContent = c.era ?? c.family;
   nameRow.append(name, fam);
 
   const craft = document.createElement("p");
@@ -578,6 +668,66 @@ function renderDetail(detail: HTMLElement, c: CharacterDef): void {
     traits.append(chip);
   });
 
+  info.append(nameRow, craft, blurb, traits);
+
+  // ── Voice card: actor credit + style + catchphrases + iconic clip ──
+  if (c.voiceMeta) {
+    const vm = c.voiceMeta;
+    const vcard = document.createElement("div");
+    vcard.className = "voice-card";
+
+    const credit = document.createElement("p");
+    credit.className = "voice-credit";
+    credit.innerHTML = `Voiced by <b>${vm.actor}</b>`;
+    vcard.append(credit);
+
+    const styleLine = document.createElement("p");
+    styleLine.className = "voice-style";
+    styleLine.textContent = vm.style;
+    vcard.append(styleLine);
+
+    const phraseRow = document.createElement("div");
+    phraseRow.className = "voice-phrases";
+    vm.catchphrases.forEach(p => {
+      const chip = document.createElement("span");
+      chip.className = "phrase-chip";
+      chip.textContent = p;
+      phraseRow.append(chip);
+    });
+    vcard.append(phraseRow);
+
+    const clip = document.createElement("div");
+    clip.className = "voice-clip";
+    const play = document.createElement("button");
+    play.className = "clip-play";
+    play.textContent = "▶";
+    play.title = "Hear their line (system voice)";
+    play.setAttribute("aria-label", `Hear ${c.name}'s iconic line`);
+    play.addEventListener("click", () => {
+      const spoke = speakCharacter(c);
+      if (spoke) {
+        play.classList.add("is-playing");
+        setTimeout(() => play.classList.remove("is-playing"), 1600);
+      } else {
+        play.title = "No system voices available";
+        play.disabled = true;
+      }
+    });
+    const clipBody = document.createElement("div");
+    clipBody.className = "voice-clip-body";
+    const clipLine = document.createElement("p");
+    clipLine.className = "voice-clip-line";
+    clipLine.textContent = `“${vm.clip}”`;
+    const clipCtx = document.createElement("p");
+    clipCtx.className = "voice-clip-ctx";
+    clipCtx.textContent = vm.clipContext;
+    clipBody.append(clipLine, clipCtx);
+    clip.append(play, clipBody);
+    vcard.append(clip);
+
+    info.append(vcard);
+  }
+
   const line = document.createElement("p");
   line.className = "detail-sample";
   line.textContent = `“${c.greeting}”`;
@@ -589,7 +739,7 @@ function renderDetail(detail: HTMLElement, c: CharacterDef): void {
     selectAndCast(c, detail.closest(".characters-page") as HTMLElement);
   });
 
-  info.append(nameRow, craft, blurb, traits, line, castBtn);
+  info.append(line, castBtn);
   detail.append(face, info);
 }
 

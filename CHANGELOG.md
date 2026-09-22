@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.2.1] — 2026-09-23
+
+### Childhood cast — the Saturday-morning roster
+
+- 43 real childhood characters across 19 shows: SpongeBob SquarePants (7),
+  The Fairly OddParents (6), Avatar: The Last Airbender (6), Dexter's
+  Laboratory, The Powerpuff Girls, Ed Edd n Eddy, Courage the Cowardly Dog,
+  Foster's Home, Codename: Kids Next Door, Samurai Jack, Johnny Bravo, Ben 10,
+  Invader Zim, Hey Arnold!, Rugrats, Jimmy Neutron, Danny Phantom,
+  Kim Possible and Phineas and Ferb
+- Web-sourced avatar art for every character (hunted via image search,
+  square-cropped, palette-optimised to ~8 KB each) shown as circular
+  portraits in the cast wall, detail pane, name-tag and header buddy chip
+- Full voice metadata per character: original voice actor credit, speech
+  style, signature catchphrases, and one iconic clip line with show context
+- Voice acting: per-character TTS profile (pitch/rate/gender) performed
+  through the Web Speech API — a ▶ button in each detail pane plays the
+  character's iconic line in a tuned system voice (graceful no-op when no
+  voices are available)
+- Gleam-style cast wall for the narrow HomeSpace window: horizontally
+  scrolling show chips, 3–4 column avatar grid above the fold, centred
+  detail pane; search now matches show, era, actor and catchphrases
+- Persona system prompts for every childhood character drive the AI's
+  voice in chat (verified live: Patrick Star's naps and Wanda's wish-safety
+  both survive contact with a real model)
+
 ## [0.2.0] — 2026-09-22
 
 ### Characters — cast your buddy

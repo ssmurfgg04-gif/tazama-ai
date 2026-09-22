@@ -695,3 +695,190 @@ body:has(.onboarding) #hud { display: none; }
 
 /* ─── Chat area breathing room ─── */
 .conversation-transcript { padding-top: 4px; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Childhood cast — avatars + voice cards (v0.2.1)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── Grid avatars: Gleam-style circular portraits ─── */
+.character-face.has-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: color-mix(in oklab, var(--char-accent) 20%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--char-accent) 40%, transparent),
+    0 2px 8px rgba(0, 0, 0, 0.3);
+  margin-bottom: 5px;
+  transition: transform var(--t-fast);
+}
+.character-card:hover .character-face.has-avatar { transform: scale(1.06); }
+
+/* ─── Detail avatar: big circular portrait with accent halo ─── */
+.detail-face.has-avatar {
+  width: 74px;
+  height: 74px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: color-mix(in oklab, var(--char-accent, var(--accent)) 20%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--char-accent, var(--accent)) 45%, transparent),
+    0 0 0 4px color-mix(in oklab, var(--char-accent, var(--accent)) 14%, transparent),
+    0 6px 18px rgba(0, 0, 0, 0.35);
+  font-size: initial;
+}
+
+/* ─── Name-tag + buddy chip avatars ─── */
+.name-tag-face.has-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: color-mix(in oklab, var(--char-accent) 22%, transparent);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  font-size: initial;
+}
+.buddy-chip-face.has-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  font-size: initial;
+}
+
+/* ─── Voice card in the detail pane ─── */
+.voice-card {
+  margin: 2px 0 12px;
+  padding: 11px 12px;
+  border-radius: 13px;
+  background: color-mix(in oklab, var(--char-accent, var(--accent)) 9%, rgba(255, 255, 255, 0.03));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--char-accent, var(--accent)) 22%, transparent);
+}
+.voice-credit {
+  margin: 0 0 2px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: color-mix(in oklab, var(--char-accent, var(--accent)) 72%, white 10%);
+}
+.voice-credit b { font-weight: 750; color: inherit; }
+.voice-style {
+  margin: 0 0 8px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--label-secondary);
+}
+.voice-phrases { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 9px; }
+.phrase-chip {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: var(--label-primary);
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+}
+.voice-clip {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 9px;
+  border-radius: 11px;
+  background: rgba(0, 0, 0, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+.clip-play {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  color: #fff;
+  cursor: pointer;
+  background: linear-gradient(180deg,
+    color-mix(in oklab, var(--char-accent, var(--accent)) 92%, white 8%),
+    color-mix(in oklab, var(--char-accent, var(--accent)) 78%, black 12%));
+  box-shadow: 0 2px 8px color-mix(in oklab, var(--char-accent, var(--accent)) 40%, transparent);
+  transition: transform var(--t-fast);
+}
+.clip-play:hover { transform: scale(1.08); }
+.clip-play:active { transform: scale(0.92); }
+.clip-play.is-playing { animation: clip-pulse 0.8s ease-in-out infinite; }
+@keyframes clip-pulse {
+  0%, 100% { box-shadow: 0 2px 8px color-mix(in oklab, var(--char-accent, var(--accent)) 40%, transparent); }
+  50% { box-shadow: 0 2px 16px color-mix(in oklab, var(--char-accent, var(--accent)) 75%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) { .clip-play.is-playing { animation: none; } }
+.clip-play:disabled { opacity: 0.4; cursor: default; transform: none; }
+.voice-clip-body { min-width: 0; }
+.voice-clip-line {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 620;
+  font-style: italic;
+  color: var(--label-primary);
+  line-height: 1.35;
+}
+.voice-clip-ctx {
+  margin: 1px 0 0;
+  font-size: 10px;
+  color: var(--label-tertiary);
+  line-height: 1.35;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Characters page — narrow-window density pass (v0.2.1)
+   At HomeSpace window width (~400px) the show chips must scroll sideways and
+   the cast wall must land above the fold, Gleam-style.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Show chips: one horizontal scroll strip, no per-line stacking */
+.family-chips {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding-bottom: 2px;
+  scroll-snap-type: x proximity;
+}
+.family-chips::-webkit-scrollbar { display: none; }
+.family-chip {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+  white-space: nowrap;
+  padding: 5px 11px;
+  font-size: 11px;
+}
+
+/* Cast wall: tighter cards, bigger avatar presence */
+.character-grid {
+  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  gap: 8px;
+}
+.character-card { padding: 10px 4px 8px; gap: 1px; }
+.character-face.has-avatar {
+  width: 40px;
+  height: 40px;
+  margin-bottom: 4px;
+}
+.character-name { font-size: 10.5px; }
+@media (max-width: 520px) {
+  .character-craft { display: none; }
+  .characters-sub { max-width: 200px; font-size: 11.5px; }
+  .characters-title { font-size: 19px; }
+}
+
+/* Detail pane: stack on narrow windows, keep the avatar centred */
+@media (max-width: 520px) {
+  .character-detail { flex-direction: column; align-items: center; text-align: center; }
+  .detail-face.has-avatar { width: 64px; height: 64px; }
+  .detail-info { width: 100%; text-align: left; }
+  .detail-name-row, .detail-traits, .voice-phrases { justify-content: center; }
+  .voice-card { text-align: left; }
+}

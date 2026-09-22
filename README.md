@@ -179,10 +179,33 @@ casting a character overrides it with their signature colour.
 ## Characters — cast your buddy
 
 Open **Characters** in the rail (or the buddy chip in the header). Search the
-cast, filter by family, hit **Cast this buddy** — and Tazama becomes that
+cast, filter by show, hit **Cast this buddy** — and Tazama becomes that
 character: accent colour, name-tag greeting, starter prompts and the AI's
 speaking voice. **Surprise me** shuffles the deck. The cast persists across
 restarts; the Tazama classic eye restores the original personality.
+
+### The childhood cast (v0.2.1)
+
+43 real Saturday-morning legends live alongside the originals, each with a
+web-sourced circular avatar, voice-actor credit, catchphrases and a playable
+iconic line:
+
+- **Nickelodeon** — SpongeBob SquarePants (SpongeBob, Patrick, Squidward,
+  Mr. Krabs, Sandy, Plankton, Gary) · The Fairly OddParents (Timmy, Cosmo,
+  Wanda, Crocker, Jorgen) · Avatar: The Last Airbender (Aang, Katara, Sokka,
+  Toph, Zuko, Iroh) · Invader Zim (Zim, GIR) · Hey Arnold! (Arnold, Helga) ·
+  Rugrats (Tommy, Angelica) · Jimmy Neutron · Danny Phantom
+- **Cartoon Network** — Dexter's Laboratory (Dexter, Dee Dee) · The Powerpuff
+  Girls (Blossom, Bubbles, Buttercup) · Ed, Edd n Eddy (Ed, Edd, Eddy) ·
+  Courage the Cowardly Dog · Foster's Home (Bloo) · Codename: Kids Next Door
+  (Numbuh 1) · Samurai Jack · Johnny Bravo · Ben 10
+- **Disney Channel** — Kim Possible · Phineas and Ferb (Doofenshmirtz, Perry)
+
+Every detail pane has a **voice card**: who voiced them, how they sound,
+their catchphrases, and a ▶ button that performs the iconic line with the
+system voice tuned per character (SpongeBob high and fast, Patrick deep and
+slow, Jorgen booming). Characters belong to their shows — this roster is a
+personal fan tribute in the spirit of casting them in your own head.
 
 ## Z.AI Local — chat with zero keys
 

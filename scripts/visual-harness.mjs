@@ -157,9 +157,21 @@ for (const s of scenes) {
     await page.click('.rail-row[data-page="characters"]');
     await page.waitForTimeout(600);
     await shot("v1-characters");
-    // pick a character → detail
+    // pick a character → detail (scroll the detail pane into view)
     const cards = await page.$$(".character-card");
-    if (cards.length > 3) { await cards[3].click(); await page.waitForTimeout(500); await shot("v1-character-detail"); }
+    if (cards.length > 3) {
+      await cards[3].click();
+      await page.waitForTimeout(500);
+      await page.locator(".character-detail").scrollIntoViewIfNeeded();
+      await page.waitForTimeout(300);
+      await shot("v1-character-detail");
+      // family filter demo — SpongeBob show
+      const chips = await page.$$(".family-chip");
+      if (chips.length > 1) { await chips[1].click(); await page.waitForTimeout(400); }
+      await page.locator(".character-detail").scrollIntoViewIfNeeded();
+      await page.waitForTimeout(300);
+      await shot("v1-character-filtered");
+    }
   } else if (s === "settings") {
     await gotoScene("home");
     await page.click('.rail-row[data-page="settings"]');

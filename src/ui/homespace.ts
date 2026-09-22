@@ -20,6 +20,7 @@ import {
   getActiveCharacter,
   renderCharactersPage,
   personaMessages,
+  renderBuddyFace,
   CharacterDef,
 } from "./characters.js";
 
@@ -84,7 +85,7 @@ export function mountHomeSpace(root: HTMLElement): void {
       const face = chip.querySelector(".buddy-chip-face");
       const name = chip.querySelector(".buddy-chip-name");
       const craft = chip.querySelector(".buddy-chip-craft");
-      if (face) face.textContent = buddy.chipFace;
+      if (face) face.replaceWith(renderBuddyFace(buddy, "buddy-chip-face"));
       if (name) name.textContent = buddy.name;
       if (craft) craft.textContent = buddy.craft;
     }
@@ -212,9 +213,7 @@ function showSuggestions(container: HTMLElement): void {
   tagHello.className = "name-tag-hello";
   tagHello.textContent = "Hello, my name is";
 
-  const tagFace = document.createElement("span");
-  tagFace.className = "name-tag-face";
-  tagFace.textContent = buddy.face;
+  const tagFace = renderBuddyFace(buddy, "name-tag-face");
 
   const tagName = document.createElement("span");
   tagName.className = "name-tag-name";
