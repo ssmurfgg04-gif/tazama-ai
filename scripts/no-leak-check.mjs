@@ -1,3 +1,21 @@
+/**
+ * scripts/no-leak-check.mjs — Tazama AI CI security gate
+ *
+ * Scans the production JS/HTML bundle (dist/) for assigned secret patterns.
+ * Exits 1 if any match is found, exits 0 with "LEAKCHECK CLEAN" if not.
+ *
+ * Run: npm run leakcheck
+ * CI:  called automatically after every `npm run build` in GitHub Actions
+ *
+ * Patterns detected:
+ *   - Anthropic API keys  (sk-ant-...)
+ *   - OpenAI-style keys   (sk-...)
+ *   - x-api-key headers   assigned to a quoted value
+ *   - Generic api_key     assigned to a quoted value
+ *
+ * False-positive guard: the identifier `key_test` is stripped from the
+ * line before matching so Vite's single-line bundle is fully scanned.
+ */
 import { readdirSync, readFileSync, statSync, existsSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";

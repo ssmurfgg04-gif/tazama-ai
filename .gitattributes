@@ -1,0 +1,28 @@
+# Normalise all text files to LF on commit (prevents CRLF warning noise)
+* text=auto eol=lf
+
+# Force binary files
+*.png  binary
+*.ico  binary
+*.icns binary
+*.wav  binary
+*.mp3  binary
+*.m4a  binary
+*.exe  binary
+*.msi  binary
+*.dll  binary
+
+# Rust / Cargo
+*.rs   text eol=lf
+*.toml text eol=lf
+
+# Web
+*.ts   text eol=lf
+*.js   text eol=lf
+*.css  text eol=lf
+*.html text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.svg  text eol=lf

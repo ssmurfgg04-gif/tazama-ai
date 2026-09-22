@@ -1,24 +1,61 @@
-# Logs
-logs
-*.log
+# ── Node / Frontend ────────────────────────────────────────────────────────
+node_modules/
+dist/
+dist-ssr/
+*.local
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
+# ── Rust / Cargo ────────────────────────────────────────────────────────────
+src-tauri/target/
+src-tauri/gen/
 
-# Editor directories and files
+# ── Tauri ───────────────────────────────────────────────────────────────────
+# Generated capability schemas (regenerated on every build)
+src-tauri/gen/
+src-tauri/capabilities/*.json.bak
+
+# ── Editor ──────────────────────────────────────────────────────────────────
 .vscode/*
 !.vscode/extensions.json
-.idea
-.DS_Store
+!.vscode/settings.json
+!.vscode/launch.json
+.idea/
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+*.swp
+
+# ── OS ──────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Secrets ─────────────────────────────────────────────────────────────────
+# NEVER commit API keys, signing keys, or tokens
+*.key
+*.pem
+*.p12
+*.pfx
+.env
+.env.*
+!.env.example
+.secrets/
+
+# ── Build artifacts ──────────────────────────────────────────────────────────
+*.exe
+*.msi
+*.deb
+*.rpm
+*.AppImage
+*.dmg
+*.app
+*.nsis.zip
+
+# ── Tazama AI specific ───────────────────────────────────────────────────────
+# Dev screenshots captured during development (not for the repo)
+docs/settings-states.png
