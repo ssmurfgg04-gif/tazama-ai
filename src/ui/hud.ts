@@ -193,14 +193,8 @@ function stateColor(phase: HUDPhase): string {
   }
 }
 
-/* ── Expose phase update for external callers ── */
-export function setHUDPhase(phase: HUDPhase, opts?: { summary?: string; doneTitle?: string }): void {
-  currentState = {
-    phase,
-    label: PHASE_LABELS[phase],
-    summary: opts?.summary,
-    doneTitle: opts?.doneTitle,
-  };
-  const col = document.querySelector(".hud-column") as HTMLElement | null;
-  if (col) updatePhase(phase, col);
-}
+/* Phase is driven exclusively via the "tazama:phase" DOM event bus.
+ * External callers: dispatch that event rather than calling a function
+ * so the single wiring path stays clear and testable.
+ * Example: document.dispatchEvent(new CustomEvent("tazama:phase", { detail: "done" }));
+ */
