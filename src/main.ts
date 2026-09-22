@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { initSettings } from "./settings";
 
 let greetInputEl: HTMLInputElement | null;
 let greetMsgEl: HTMLElement | null;
@@ -13,6 +14,7 @@ async function greet() {
 }
 
 window.addEventListener("DOMContentLoaded", () => {
+  initSettings();
   greetInputEl = document.querySelector("#greet-input");
   greetMsgEl = document.querySelector("#greet-msg");
   document.querySelector("#greet-form")?.addEventListener("submit", (e) => {
