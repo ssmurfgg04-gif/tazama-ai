@@ -97,18 +97,7 @@ jobs:
             --file-digest sha256
         shell: pwsh
 
-      - name: Sign — SignPath (open source, free)
-        if: ${{ secrets.SIGNPATH_API_TOKEN != '' && secrets.AZURE_CLIENT_ID == '' }}
-        uses: signpath/github-action-submit-signing-request@v1.0
-        with:
-          api-token:                  ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id:            ${{ secrets.SIGNPATH_ORG_ID }}
-          project-slug:               tazama-ai
-          signing-policy-slug:        release-signing
-          artifact-configuration-slug: exe
-          github-artifact-id:         ${{ steps.upload-unsigned.outputs.artifact-id }}
-          wait-for-completion:        true
-          output-artifact-directory:  src-tauri/target/release/bundle/nsis/
+      
 
       # ── 8. Locate artifacts ──────────────────────────────────────────────
       - name: Locate build artifacts
