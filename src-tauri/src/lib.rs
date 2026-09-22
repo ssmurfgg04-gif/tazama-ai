@@ -1,6 +1,8 @@
 use std::sync::Mutex;
 use tauri::Manager;
 
+mod caps;
+
 #[derive(Default)]
 pub struct AppState {
     pub http: Mutex<Option<reqwest::Client>>,

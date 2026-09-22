@@ -1,10 +1,21 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
+  "description": "Peek Plan A minimal permissions.",
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "opener:default"
+    "core:window:allow-close",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "log:default",
+    "store:default",
+    "store:allow-load",
+    "store:allow-get",
+    "store:allow-set",
+    "store:allow-save",
+    "keyring:allow-set-password",
+    "keyring:allow-get-password",
+    "keyring:allow-delete-password"
   ]
 }
