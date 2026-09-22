@@ -7,7 +7,7 @@ const dist = resolve(here, "..", "dist");
 
 const patterns = [
   /sk-ant-[A-Za-z0-9-_]{10,}/,
-  /sk-[A-Za-z0-9]{10,}/,
+  /(?<![A-Za-z0-9])sk-[A-Za-z0-9]{10,}/,
   /x-api-key\s*[:=]\s*['"][^'"]{8,}/,
   /["']api[_-]?key["']\s*[:=]\s*['"][^'"]{8,}/,
 ];
@@ -33,9 +33,11 @@ for (const f of files) {
   const text = readFileSync(f, "utf8");
   const lines = text.split(/\r?\n/);
   lines.forEach((line, i) => {
-    if (line.includes("key_test")) return; // excluded benign word per brief
+    // Strip benign identifier token before pattern-matching so the whole line
+    // is still scanned (critical for single-line minified bundles).
+    const scanned = line.replace(/\bkey_test\b/g, "");
     for (const re of patterns) {
-      if (re.test(line)) {
+      if (re.test(scanned)) {
         hits++;
         console.log(`${f}:${i + 1}: matched ${re} :: ${line.trim().slice(0, 200)}`);
         break;

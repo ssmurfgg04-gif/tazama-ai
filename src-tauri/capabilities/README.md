@@ -1,16 +1,19 @@
-# Peek capabilities — permission justifications (Task 8)
+# Peek capabilities — permission justifications
 
-`core:*` permissions are Tauri defaults (window close/minimize/maximize on `main`).
-Every non-`core:*` permission below carries a `// reason:` line. All 9 are
-justified; none removed. Key material lives ONLY in the OS keyring (see
-`src/settings.contract.md`) — never in the store, never logged.
+`core:*` permissions are the only grants. Plugin IPC grants (log, store,
+keyring) were removed in the Task 8 fix round because the frontend never
+calls `plugin:store|*` or `plugin:keyring|*` directly — it calls only
+custom app commands (`key_set`, `key_has`, `key_remove`, `key_test`,
+`chat_complete`, `transcribe`, `speak`, `migrate_legacy_keys`).
 
-// reason: log:default — tauri_plugin_log registered in src-tauri/src/lib.rs; Rust-side diagnostics only, never logs key material (providers.rs reads keys via read_key, never logs).
-// reason: store:default — tauri_plugin_store registered in src-tauri/src/lib.rs; base capability for non-secret app-state persistence.
-// reason: store:allow-load — load persisted non-secret app state (e.g. settings) from disk at startup.
-// reason: store:allow-get — read non-secret persisted values (settings/UI state); keys are excluded by contract.
-// reason: store:allow-set — write non-secret persisted values (settings/UI state) in memory.
-// reason: store:allow-save — flush non-secret persisted values to disk.
-// reason: keyring:allow-set-password — secrets::key_set / persist_key store provider API keys in the OS keyring (Task 4/6).
-// reason: keyring:allow-get-password — secrets::key_has + read_key check/read provider keys from the OS keyring (Task 5 consumers).
-// reason: keyring:allow-delete-password — secrets::key_remove deletes provider keys from the OS keyring.
+Rust-side plugin calls (KeyringExt, store, log) are unaffected by capability
+entries — those are IPC gates for the WebView, not for Rust code.
+
+## Active permissions
+
+| Permission | Reason |
+|---|---|
+| `core:default` | Tauri built-in default window capabilities. |
+| `core:window:allow-close` | Settings UI close button. |
+| `core:window:allow-minimize` | Overlay minimize to tray. |
+| `core:window:allow-toggle-maximize` | Overlay expand/restore. |

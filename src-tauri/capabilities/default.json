@@ -1,21 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Peek Plan A minimal permissions.",
+  "description": "Peek Plan A — core window permissions only. Plugin IPC grants (log, store, keyring) removed: the frontend calls only custom app commands (key_set, key_has, key_remove, key_test, chat_complete, transcribe, speak, migrate_legacy_keys) and never invokes plugin:* directly. Rust-side plugin calls are unaffected by capability entries.",
   "windows": ["main"],
   "permissions": [
     "core:default",
     "core:window:allow-close",
     "core:window:allow-minimize",
-    "core:window:allow-toggle-maximize",
-    "log:default",
-    "store:default",
-    "store:allow-load",
-    "store:allow-get",
-    "store:allow-set",
-    "store:allow-save",
-    "keyring:allow-set-password",
-    "keyring:allow-get-password",
-    "keyring:allow-delete-password"
+    "core:window:allow-toggle-maximize"
   ]
 }
