@@ -1,252 +1,260 @@
-//! Context-m memory integration — Tazama AI
+//! Tazama AI — built-in memory system
 //!
-//! Spawns `cortexm serve --db <path>` as a stdio child and communicates over
-//! JSON-RPC (MCP protocol). Shares the SAME database as the opencode session
-//! (./data/context-m.db relative to the workspace root), so the buddy
-//! inherits and contributes to Jack's persistent memory.
+//! Self-contained SQLite store: no cortexm, no Python, no MCP, no opencode.
+//! Ships inside the exe, works on any Windows machine, DB lives in %APPDATA%.
 //!
-//! Three Tauri commands exposed to JS (never expose raw DB path or creds):
-//!   memory_add(content: String) -> Result<String, String>
-//!   memory_search(query: String, limit: u32) -> Result<String, String>
-//!   memory_recall(n: u32) -> Result<String, String>
+//! Three commands exposed to JS:
+//!   memory_add(content, tags?) -> Result<String, String>   (returns memory id)
+//!   memory_search(query, limit?) -> Result<Vec<Memory>, String>
+//!   memory_recall(n?) -> Result<Vec<Memory>, String>
 //!
-//! The child process is started lazily on first call and kept alive.
-//! If it exits, the next call restarts it (self-healing).
+//! Storage: SQLite with FTS5 full-text search.
+//! Schema: memories table + fts virtual table.
+//! Thread-safe via Mutex<Connection>.
 
-use std::{
-    io::{BufRead, BufReader, Write},
-    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
-    sync::Mutex,
-};
-use tauri::{AppHandle, Manager};
+use chrono::Utc;
+use rusqlite::{params, Connection};
+use serde::{Deserialize, Serialize};
+use std::{path::PathBuf, sync::Mutex};
+use tauri::{AppHandle, Manager, Runtime};
+use uuid::Uuid;
 
-// ─── Process state (app-lifetime singleton) ───────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-struct CortexState {
-    child:  Option<Child>,
-    stdin:  Option<ChildStdin>,
-    stdout: Option<BufReader<ChildStdout>>,
-    seq:    u64,
-    initialized: bool,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Memory {
+    pub id:         String,
+    pub content:    String,
+    pub tags:       Vec<String>,
+    pub created_at: String,
+    pub score:      f64,   // relevance (FTS rank) or 1.0 for recall
 }
 
-impl Default for CortexState {
-    fn default() -> Self {
-        Self {
-            child:  None,
-            stdin:  None,
-            stdout: None,
-            seq:    0,
-            initialized: false,
-        }
-    }
-}
+// ─── State ────────────────────────────────────────────────────────────────────
 
-pub struct MemoryState(pub Mutex<CortexState>);
+pub struct MemoryState(pub Mutex<Option<Connection>>);
 
 impl Default for MemoryState {
-    fn default() -> Self {
-        Self(Mutex::new(CortexState::default()))
-    }
+    fn default() -> Self { Self(Mutex::new(None)) }
 }
 
-// ─── DB path resolution ────────────────────────────────────────────────────────
+// ─── DB path ─────────────────────────────────────────────────────────────────
 
-fn db_path<R: tauri::Runtime>(app: &AppHandle<R>) -> String {
-    // 1. Env var override (same as opencode MCP config: CONTEXT_M_DB)
-    if let Ok(p) = std::env::var("CONTEXT_M_DB") {
-        return p;
-    }
-    // 2. Sibling of the exe: <exe_dir>/../../data/context-m.db
-    //    Works when running from the peek/ project during dev (exe is in target/…)
-    // 3. AppData fallback for installed release
-    let app_dir = app.path().app_data_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."));
-    app_dir.join("context-m.db").to_string_lossy().into_owned()
+fn db_path<R: Runtime>(app: &AppHandle<R>) -> PathBuf {
+    app.path()
+        .app_data_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("tazama-memory.db")
 }
 
-// ─── Child lifecycle ───────────────────────────────────────────────────────────
+// ─── Initialise ───────────────────────────────────────────────────────────────
 
-fn ensure_child(state: &mut CortexState, db: &str) -> Result<(), String> {
-    // Check if existing child is still alive
-    if let Some(ref mut child) = state.child {
-        match child.try_wait() {
-            Ok(Some(_)) => {
-                // Exited — clear and restart below
-                state.stdin  = None;
-                state.stdout = None;
-                state.child  = None;
-                state.initialized = false;
-            }
-            Ok(None) => return Ok(()), // still running
-            Err(_)   => {
-                state.stdin  = None;
-                state.stdout = None;
-                state.child  = None;
-                state.initialized = false;
-            }
-        }
+fn open_db(path: &PathBuf) -> Result<Connection, String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).ok();
     }
+    let conn = Connection::open(path).map_err(|e| format!("db open: {e}"))?;
 
-    // Spawn cortexm serve
-    let mut cmd = Command::new("cortexm");
-    cmd.args(["serve", "--db", db])
-       .env("PYTHONUTF8", "1")
-       .stdin(Stdio::piped())
-       .stdout(Stdio::piped())
-       .stderr(Stdio::null());
+    // Enable WAL mode for concurrent reads
+    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")
+        .map_err(|e| format!("pragma: {e}"))?;
 
-    let mut child = cmd.spawn().map_err(|e| format!("cortexm spawn failed: {e}"))?;
-    let stdin  = child.stdin.take().ok_or("cortexm stdin missing")?;
-    let stdout = BufReader::new(child.stdout.take().ok_or("cortexm stdout missing")?);
-    state.stdin  = Some(stdin);
-    state.stdout = Some(stdout);
-    state.child  = Some(child);
-    state.initialized = false;
+    // Main table
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS memories (
+            id          TEXT PRIMARY KEY,
+            content     TEXT NOT NULL,
+            tags        TEXT NOT NULL DEFAULT '[]',
+            created_at  TEXT NOT NULL,
+            access_count INTEGER DEFAULT 0
+        );
+        CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts
+            USING fts5(content, id UNINDEXED, tokenize='unicode61');
+        CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT);",
+    ).map_err(|e| format!("schema: {e}"))?;
+
+    Ok(conn)
+}
+
+/// Ensure the DB is open; open it if not. Call before every command.
+fn ensure<R: Runtime>(
+    app: &AppHandle<R>,
+    state: &MemoryState,
+) -> Result<(), String> {
+    let mut guard = state.0.lock().map_err(|e| format!("lock: {e}"))?;
+    if guard.is_none() {
+        let path = db_path(app);
+        *guard = Some(open_db(&path)?);
+    }
     Ok(())
 }
 
-// ─── JSON-RPC helpers ─────────────────────────────────────────────────────────
-
-fn rpc_write(stdin: &mut ChildStdin, msg: &str) -> Result<(), String> {
-    stdin.write_all(msg.as_bytes()).map_err(|e| format!("rpc write: {e}"))?;
-    stdin.write_all(b"\n").map_err(|e| format!("rpc newline: {e}"))?;
-    stdin.flush().map_err(|e| format!("rpc flush: {e}"))?;
-    Ok(())
+/// Pre-warm on app start (no-op after first call).
+pub fn warm_up<R: Runtime>(app: &AppHandle<R>, state: &MemoryState) {
+    let _ = ensure(app, state);
 }
 
-fn rpc_read(stdout: &mut BufReader<ChildStdout>) -> Result<serde_json::Value, String> {
-    let mut line = String::new();
-    stdout.read_line(&mut line).map_err(|e| format!("rpc read: {e}"))?;
-    let v: serde_json::Value = serde_json::from_str(line.trim())
-        .map_err(|e| format!("rpc parse: {e}\nraw: {}", line.trim()))?;
-    Ok(v)
-}
+// ─── Commands ─────────────────────────────────────────────────────────────────
 
-fn next_id(state: &mut CortexState) -> u64 {
-    state.seq += 1;
-    state.seq
-}
-
-fn mcp_initialize(state: &mut CortexState) -> Result<(), String> {
-    if state.initialized { return Ok(()); }
-    let id = next_id(state);
-    let msg = format!(
-        r#"{{"jsonrpc":"2.0","id":{id},"method":"initialize","params":{{"protocolVersion":"2024-11-05","capabilities":{{}},"clientInfo":{{"name":"tazama-ai","version":"0.1.0"}}}}}}"#
-    );
-    let stdin  = state.stdin.as_mut().ok_or("no stdin")?;
-    let stdout = state.stdout.as_mut().ok_or("no stdout")?;
-    rpc_write(stdin, &msg)?;
-    rpc_read(stdout)?; // consume initialize result
-    state.initialized = true;
-    Ok(())
-}
-
-/// Call a context-m MCP tool and return the first text content.
-fn call_tool(state: &mut CortexState, tool: &str, args: serde_json::Value) -> Result<String, String> {
-    let id = next_id(state);
-    let msg = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": id,
-        "method": "tools/call",
-        "params": { "name": tool, "arguments": args }
-    });
-    let stdin  = state.stdin.as_mut().ok_or("no stdin")?;
-    let stdout = state.stdout.as_mut().ok_or("no stdout")?;
-    rpc_write(stdin, &msg.to_string())?;
-    let resp = rpc_read(stdout)?;
-    // Extract text from content[0].text
-    let text = resp
-        .pointer("/result/content/0/text")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    Ok(text)
-}
-
-// ─── Tauri commands ───────────────────────────────────────────────────────────
-
-/// Store a memory. Content is the fact or lesson to remember.
-/// Never pass secrets — content goes into the shared context-m DB.
+/// Store a memory. Returns the new memory's id.
+/// Content is plain text — never pass secrets.
 #[tauri::command]
-pub fn memory_add<R: tauri::Runtime>(
+pub fn memory_add<R: Runtime>(
     app: AppHandle<R>,
     state: tauri::State<'_, MemoryState>,
     content: String,
+    tags: Option<Vec<String>>,
 ) -> Result<String, String> {
     if content.trim().is_empty() {
         return Err("content must not be empty".to_string());
     }
-    let db = db_path(&app);
-    let mut s = state.0.lock().map_err(|e| format!("lock: {e}"))?;
-    ensure_child(&mut s, &db)?;
-    mcp_initialize(&mut s)?;
-    let args = serde_json::json!({
-        "messages": [{"role": "assistant", "content": content}],
-        "user_id": "jack"
-    });
-    call_tool(&mut s, "contextm_add", args)
+    ensure(&app, &state)?;
+    let guard = state.0.lock().map_err(|e| format!("lock: {e}"))?;
+    let conn  = guard.as_ref().ok_or("db not open")?;
+
+    let id  = Uuid::new_v4().to_string();
+    let ts  = Utc::now().to_rfc3339();
+    let tag_json = serde_json::to_string(&tags.unwrap_or_default())
+        .unwrap_or_else(|_| "[]".to_string());
+
+    conn.execute(
+        "INSERT INTO memories (id, content, tags, created_at) VALUES (?1, ?2, ?3, ?4)",
+        params![id, content, tag_json, ts],
+    ).map_err(|e| format!("insert: {e}"))?;
+
+    // Keep FTS in sync
+    conn.execute(
+        "INSERT INTO memories_fts (content, id) VALUES (?1, ?2)",
+        params![content, id],
+    ).map_err(|e| format!("fts insert: {e}"))?;
+
+    Ok(id)
 }
 
-/// Search memory for facts relevant to a query. Returns markdown context block.
+/// Search memories by text query. Returns up to `limit` results (default 8).
 #[tauri::command]
-pub fn memory_search<R: tauri::Runtime>(
+pub fn memory_search<R: Runtime>(
     app: AppHandle<R>,
     state: tauri::State<'_, MemoryState>,
     query: String,
     limit: Option<u32>,
-) -> Result<String, String> {
+) -> Result<Vec<Memory>, String> {
     if query.trim().is_empty() {
         return Err("query must not be empty".to_string());
     }
-    let db = db_path(&app);
-    let mut s = state.0.lock().map_err(|e| format!("lock: {e}"))?;
-    ensure_child(&mut s, &db)?;
-    mcp_initialize(&mut s)?;
-    let args = serde_json::json!({
-        "query": query,
-        "user_id": "jack",
-        "limit": limit.unwrap_or(8)
-    });
-    call_tool(&mut s, "contextm_search", args)
+    ensure(&app, &state)?;
+    let guard = state.0.lock().map_err(|e| format!("lock: {e}"))?;
+    let conn  = guard.as_ref().ok_or("db not open")?;
+    let n     = limit.unwrap_or(8).min(50) as i64;
+
+    // FTS5 match — rank is negative (lower = better match)
+    let mut stmt = conn.prepare(
+        "SELECT m.id, m.content, m.tags, m.created_at, -fts.rank AS score
+         FROM memories_fts fts
+         JOIN memories m ON m.id = fts.id
+         WHERE memories_fts MATCH ?1
+         ORDER BY fts.rank
+         LIMIT ?2",
+    ).map_err(|e| format!("prepare: {e}"))?;
+
+    // Sanitise query for FTS5 (wrap in quotes to avoid syntax errors)
+    let safe_query = format!("\"{}\"", query.replace('"', " "));
+    let rows: Vec<Memory> = stmt.query_map(params![safe_query, n], row_to_memory)
+        .map_err(|e| format!("query: {e}"))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    // If FTS returns nothing (rare query), fall back to LIKE
+    if rows.is_empty() {
+        let like_query = format!("%{}%", query);
+        let mut stmt2 = conn.prepare(
+            "SELECT id, content, tags, created_at, 1.0 AS score
+             FROM memories
+             WHERE content LIKE ?1
+             ORDER BY created_at DESC
+             LIMIT ?2",
+        ).map_err(|e| format!("prepare fallback: {e}"))?;
+        let rows2: Vec<Memory> = stmt2
+            .query_map(params![like_query, n], row_to_memory)
+            .map_err(|e| format!("like query: {e}"))?
+            .filter_map(|r| r.ok())
+            .collect();
+        return Ok(rows2);
+    }
+
+    Ok(rows)
 }
 
-/// Load the most recent N facts as a context block for prompt injection.
+/// Recall the N most recent memories (default 12).
 #[tauri::command]
-pub fn memory_recall<R: tauri::Runtime>(
+pub fn memory_recall<R: Runtime>(
     app: AppHandle<R>,
     state: tauri::State<'_, MemoryState>,
     n: Option<u32>,
-) -> Result<String, String> {
-    let db = db_path(&app);
-    let mut s = state.0.lock().map_err(|e| format!("lock: {e}"))?;
-    ensure_child(&mut s, &db)?;
-    mcp_initialize(&mut s)?;
-    let args = serde_json::json!({
-        "user_id": "jack",
-        "n": n.unwrap_or(12)
-    });
-    call_tool(&mut s, "contextm_preload", args)
+) -> Result<Vec<Memory>, String> {
+    ensure(&app, &state)?;
+    let guard = state.0.lock().map_err(|e| format!("lock: {e}"))?;
+    let conn  = guard.as_ref().ok_or("db not open")?;
+    let limit = n.unwrap_or(12).min(50) as i64;
+
+    let mut stmt = conn.prepare(
+        "SELECT id, content, tags, created_at, 1.0 AS score
+         FROM memories
+         ORDER BY created_at DESC
+         LIMIT ?1",
+    ).map_err(|e| format!("prepare: {e}"))?;
+
+    let rows: Vec<Memory> = stmt
+        .query_map(params![limit], row_to_memory)
+        .map_err(|e| format!("query: {e}"))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(rows)
 }
 
-// ─── Cleanup ──────────────────────────────────────────────────────────────────
-
-pub fn shutdown(state: &MemoryState) {
-    if let Ok(mut s) = state.0.lock() {
-        s.stdin.take(); // close stdin so cortexm exits cleanly
-        if let Some(mut child) = s.child.take() {
-            let _ = child.wait();
-        }
-    }
+/// Delete a specific memory by id.
+#[tauri::command]
+pub fn memory_delete<R: Runtime>(
+    app: AppHandle<R>,
+    state: tauri::State<'_, MemoryState>,
+    id: String,
+) -> Result<(), String> {
+    ensure(&app, &state)?;
+    let guard = state.0.lock().map_err(|e| format!("lock: {e}"))?;
+    let conn  = guard.as_ref().ok_or("db not open")?;
+    conn.execute("DELETE FROM memories WHERE id = ?1", params![id])
+        .map_err(|e| format!("delete: {e}"))?;
+    conn.execute("DELETE FROM memories_fts WHERE id = ?1", params![id])
+        .map_err(|e| format!("fts delete: {e}"))?;
+    Ok(())
 }
 
-/// Called from app setup to pre-warm cortexm before the first user message.
-pub fn warm_up<R: tauri::Runtime>(app: &AppHandle<R>, state: &MemoryState) {
-    let db = db_path(app);
-    if let Ok(mut s) = state.0.lock() {
-        let _ = ensure_child(&mut s, &db);
-        let _ = mcp_initialize(&mut s);
-    }
+/// Return the count of stored memories.
+#[tauri::command]
+pub fn memory_count<R: Runtime>(
+    app: AppHandle<R>,
+    state: tauri::State<'_, MemoryState>,
+) -> Result<i64, String> {
+    ensure(&app, &state)?;
+    let guard = state.0.lock().map_err(|e| format!("lock: {e}"))?;
+    let conn  = guard.as_ref().ok_or("db not open")?;
+    conn.query_row("SELECT COUNT(*) FROM memories", [], |r| r.get(0))
+        .map_err(|e| format!("count: {e}"))
+}
+
+// ─── Helper ───────────────────────────────────────────────────────────────────
+
+fn row_to_memory(row: &rusqlite::Row<'_>) -> rusqlite::Result<Memory> {
+    let tag_str: String = row.get(2)?;
+    let tags: Vec<String> = serde_json::from_str(&tag_str).unwrap_or_default();
+    Ok(Memory {
+        id:         row.get(0)?,
+        content:    row.get(1)?,
+        tags,
+        created_at: row.get(3)?,
+        score:      row.get(4)?,
+    })
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -254,21 +262,77 @@ pub fn warm_up<R: tauri::Runtime>(app: &AppHandle<R>, state: &MemoryState) {
 mod tests {
     use super::*;
 
-    #[test]
-    fn db_env_override() {
-        std::env::set_var("CONTEXT_M_DB", "/tmp/test.db");
-        // Can't construct AppHandle in tests — verify env resolution path
-        // via the env var check directly
-        let p = std::env::var("CONTEXT_M_DB").unwrap();
-        assert_eq!(p, "/tmp/test.db");
-        std::env::remove_var("CONTEXT_M_DB");
+    fn temp_db() -> (Connection, PathBuf) {
+        let path = std::env::temp_dir().join(format!("tazama-test-{}.db", Uuid::new_v4()));
+        let conn = open_db(&path).expect("open temp db");
+        (conn, path)
     }
 
     #[test]
-    fn cortex_state_default_uninitialized() {
-        let s = CortexState::default();
-        assert!(!s.initialized);
-        assert!(s.child.is_none());
-        assert_eq!(s.seq, 0);
+    fn insert_and_recall() {
+        let (conn, path) = temp_db();
+        let id = Uuid::new_v4().to_string();
+        let ts = Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO memories (id, content, tags, created_at) VALUES (?1, ?2, '[]', ?3)",
+            params![id, "Tazama watches your screen", ts],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO memories_fts (content, id) VALUES (?1, ?2)",
+            params!["Tazama watches your screen", id],
+        ).unwrap();
+
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM memories", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 1);
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn fts_search_finds_content() {
+        let (conn, path) = temp_db();
+        let id = Uuid::new_v4().to_string();
+        let ts = Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO memories (id, content, tags, created_at) VALUES (?1, ?2, '[]', ?3)",
+            params![id, "context-m is a memory system for AI agents", ts],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO memories_fts (content, id) VALUES (?1, ?2)",
+            params!["context-m is a memory system for AI agents", id],
+        ).unwrap();
+
+        let mut stmt = conn.prepare(
+            "SELECT m.id FROM memories_fts f JOIN memories m ON m.id = f.id WHERE memories_fts MATCH '\"memory system\"'"
+        ).unwrap();
+        let ids: Vec<String> = stmt.query_map([], |r| r.get(0)).unwrap()
+            .filter_map(|r| r.ok()).collect();
+        assert!(!ids.is_empty(), "FTS should find the memory");
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn delete_removes_record() {
+        let (conn, path) = temp_db();
+        let id = Uuid::new_v4().to_string();
+        let ts = Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO memories (id, content, tags, created_at) VALUES (?1, ?2, '[]', ?3)",
+            params![id, "delete me", ts],
+        ).unwrap();
+        conn.execute("DELETE FROM memories WHERE id = ?1", params![id]).unwrap();
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM memories", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 0);
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn schema_has_fts_table() {
+        let (conn, path) = temp_db();
+        let exists: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE name='memories_fts'",
+            [], |r| r.get(0)
+        ).unwrap();
+        assert_eq!(exists, 1, "FTS table must exist");
+        std::fs::remove_file(path).ok();
     }
 }

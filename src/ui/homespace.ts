@@ -375,20 +375,22 @@ async function sendMessage(text: string, container: HTMLElement): Promise<void> 
   playSoundCue("agent-launch");
 
   try {
-    // Recall relevant memory before calling the AI (context-m shared with opencode)
+    // Recall relevant memory before calling the AI
+    // Built-in SQLite memory — works on any device, zero external deps
+    interface MemoryItem { id: string; content: string; score: number; created_at: string; }
     let memoryContext = "";
     try {
-      memoryContext = await invoke<string>("memory_search", {
-        query: text,
-        limit: 5,
-      });
-    } catch { /* memory not yet set up — continue without */ }
+      const mems = await invoke<MemoryItem[]>("memory_search", { query: text, limit: 5 });
+      if (mems.length > 0) {
+        memoryContext = mems.map(m => `- ${m.content}`).join("\n");
+      }
+    } catch { /* memory DB not yet ready — continue without */ }
 
     // Build messages: optional memory context as system-level prefix
     const aiMessages = memoryContext
       ? [
-          { role: "user", content: `[Relevant context from memory]\n${memoryContext}` },
-          { role: "assistant", content: "Got it, I'll use this context." },
+          { role: "user", content: `[Context from memory]\n${memoryContext}` },
+          { role: "assistant", content: "Understood, I have that context." },
           { role: "user", content: text },
         ]
       : [{ role: "user", content: text }];

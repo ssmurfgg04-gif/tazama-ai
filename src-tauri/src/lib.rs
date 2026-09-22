@@ -30,7 +30,8 @@ pub fn run() {
         .plugin(tauri_plugin_keyring::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
-            // Pre-warm context-m cortexm process (zero first-call latency)
+            // Pre-warm the embedded SQLite memory DB (opens file, creates schema)
+            // Zero external dependencies — DB lives in %APPDATA%/com.tazamaai.app/
             let mem = app.state::<MemoryState>();
             memory::warm_up(app.handle(), &mem);
             Ok(())
@@ -45,10 +46,12 @@ pub fn run() {
             providers::key_test,
             providers::transcribe,
             providers::speak,
-            // ── Plan A+: Memory (context-m) ──
+            // ── Built-in memory (SQLite + FTS5, zero external deps) ──
             memory::memory_add,
             memory::memory_search,
             memory::memory_recall,
+            memory::memory_delete,
+            memory::memory_count,
             // ── Plan C: Screen capture + computer-use ──
             capture::screenshot,
             capture::get_ui_elements,
