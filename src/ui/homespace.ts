@@ -101,10 +101,19 @@ function selectPage(id: string, rail: HTMLElement, btn: HTMLButtonElement): void
   btn.classList.add("is-selected");
   const body = document.querySelector(".homespace-body");
   if (!body) return;
+  // Every rail page renders its own surface — never fall through to suggestions.
   if (id === "settings") {
     body.innerHTML = "";
-    // Settings rendered by settings.ts; imported lazily
     import("./settings-page.js").then(m => m.renderSettings(body as HTMLElement));
+  } else if (id === "agents") {
+    body.innerHTML = "";
+    import("./agents-page.js").then(m => m.renderAgentsPage(body as HTMLElement));
+  } else if (id === "skills") {
+    body.innerHTML = "";
+    import("./skills-page.js").then(m => m.renderSkillsPage(body as HTMLElement));
+  } else if (id === "memory") {
+    body.innerHTML = "";
+    import("./memory-page.js").then(m => m.renderMemoryPage(body as HTMLElement));
   } else {
     showSuggestions(body as HTMLElement);
   }

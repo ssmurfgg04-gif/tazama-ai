@@ -1,5 +1,6 @@
 use std::sync::Mutex;
 use tauri::Manager;
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutEvent, ShortcutState};
 
 mod agents;
 mod caps;
@@ -34,6 +35,21 @@ pub fn run() {
             // Zero external dependencies — DB lives in %APPDATA%/com.tazamaai.app/
             let mem = app.state::<MemoryState>();
             memory::warm_up(app.handle(), &mem);
+
+            // Global hotkey Alt+Q: toggle the main window.
+            // HUD overlay window stays visible (ambient status must persist).
+            if let Err(e) = app.global_shortcut().on_shortcut("Alt+Q", |app, _shortcut, event| {
+                if event.state() == ShortcutState::Pressed {
+                    if let Some(win) = app.get_webview_window("main") {
+                        let _ = match win.is_visible() {
+                            Ok(true)  => win.hide(),
+                            _         => win.show().and_then(|_| win.set_focus()),
+                        };
+                    }
+                }
+            }) {
+                eprintln!("global shortcut Alt+Q registration failed: {e}");
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

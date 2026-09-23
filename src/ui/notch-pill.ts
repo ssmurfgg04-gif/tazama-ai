@@ -1,5 +1,5 @@
 ﻿/**
- * Top-edge docked pill â€” Tazama AI
+ * Top-edge docked pill -- Tazama AI
  *
  * Windows equivalent of HeyClicky's NotchWindowManager.
  * A pill anchored to the top-centre of the primary display, always-on-top,
@@ -96,7 +96,7 @@ function onLeave(): void {
   pillEl.classList.remove("is-hovered");
   stopDwellRing();
   if (pillEl.classList.contains("is-expanded")) {
-    // Keep expanded while pointer is inside surface â€” collapse on leave
+    // Keep expanded while pointer is inside surface -- collapse on leave
     // (surface has pointer-events so this only fires when truly leaving)
     collapseSurface();
   }

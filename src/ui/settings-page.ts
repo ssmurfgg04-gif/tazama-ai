@@ -5,6 +5,12 @@
  */
 
 import { initSettings } from "../settings.js";
+import {
+  buildHotkeyRecorder,
+  registerHotkey,
+  renderKeycaps,
+  toggleMainWindow,
+} from "./hotkey.js";
 
 export function renderSettings(container: HTMLElement): void {
   container.innerHTML = "";
@@ -55,15 +61,102 @@ export function renderSettings(container: HTMLElement): void {
 
   appearGroup.append(appearTitle, animRow, soundRow);
 
-  // ── Accent colour (HomeSpaceCursorColorSwatch) ──
+  // ── Accent colour ──
   const accentRow = buildAccentRow();
   appearGroup.append(accentRow);
 
-  scaffold.append(keysGroup, appearGroup);
+  // ── Shortcuts ──
+  const keys2Group = document.createElement("section");
+  keys2Group.className = "settings-group";
+
+  const keys2Title = document.createElement("h2");
+  keys2Title.className = "settings-group-title";
+  keys2Title.textContent = "Shortcuts";
+
+  const fixedRow = document.createElement("div");
+  fixedRow.className = "settings-row";
+
+  const fixedInfo = document.createElement("div");
+  fixedInfo.className = "settings-row-info";
+
+  const fixedTitle = document.createElement("span");
+  fixedTitle.className = "settings-name";
+  fixedTitle.textContent = "Toggle window";
+
+  const fixedHint = document.createElement("span");
+  fixedHint.className = "settings-hint";
+  fixedHint.textContent = "Built-in shortcut, always available.";
+
+  fixedInfo.append(fixedTitle, fixedHint);
+  fixedRow.append(fixedInfo, renderKeycaps("Alt+Q"));
+
+  const customRow = document.createElement("div");
+  customRow.className = "settings-row settings-row-col";
+
+  const customInfo = document.createElement("div");
+  customInfo.className = "settings-row-info";
+
+  const customTitle = document.createElement("span");
+  customTitle.className = "settings-name";
+  customTitle.textContent = "Custom toggle shortcut";
+
+  const customHint = document.createElement("span");
+  customHint.className = "settings-hint";
+  customHint.textContent = "Record your own key combo to show or hide Tazama.";
+
+  customInfo.append(customTitle, customHint);
+  customRow.append(customInfo);
+
+  const savedCustom = loadCustomShortcut();
+  const recorder = buildHotkeyRecorder(savedCustom ?? "", async shortcut => {
+    saveCustomShortcut(shortcut);
+    await registerHotkey({
+      id: "toggle-window",
+      label: "Toggle window",
+      shortcut,
+      action: () => { void toggleMainWindow(); },
+    });
+  });
+  customRow.append(recorder);
+
+  keys2Group.append(keys2Title, fixedRow, customRow);
+
+  scaffold.append(keysGroup, appearGroup, keys2Group);
   container.append(scaffold);
+
+  // Register the built-in toggle + any saved custom shortcut.
+  void registerHotkey({
+    id: "toggle-window-builtin",
+    label: "Toggle window",
+    shortcut: "Alt+Q",
+    action: () => { void toggleMainWindow(); },
+  });
+  const restored = loadCustomShortcut();
+  if (restored) {
+    void registerHotkey({
+      id: "toggle-window",
+      label: "Toggle window",
+      shortcut: restored,
+      action: () => { void toggleMainWindow(); },
+    });
+  }
 
   // Wire keys UI from Plan A
   initSettings();
+}
+
+function loadCustomShortcut(): string | null {
+  try {
+    return localStorage.getItem("tazama-custom-shortcut");
+  } catch {
+    return null;
+  }
+}
+
+function saveCustomShortcut(shortcut: string): void {
+  try {
+    localStorage.setItem("tazama-custom-shortcut", shortcut);
+  } catch { /* ignore */ }
 }
 
 function buildToggleRow(
@@ -115,7 +208,7 @@ function buildAccentRow(): HTMLElement {
 
   const hint = document.createElement("span");
   hint.className = "settings-hint";
-  hint.textContent = "Sets cursor, caret, selection, and button tint. HeyClicky's HomeSpaceCursorColorSwatch pattern.";
+  hint.textContent = "Sets cursor, caret, selection, and button tint.";
 
   info.append(title, hint);
 

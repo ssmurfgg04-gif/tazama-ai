@@ -13,6 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
+        "label": "main",
         "title": "Tazama AI",
         "width": 400,
         "height": 680,
@@ -23,6 +24,24 @@
         "decorations": false,
         "alwaysOnTop": false,
         "shadow": true
+      },
+      {
+        "label": "hud",
+        "title": "Tazama AI HUD",
+        "url": "index.html?overlay=hud",
+        "width": 360,
+        "height": 220,
+        "minWidth": 280,
+        "minHeight": 120,
+        "resizable": false,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "visible": true,
+        "x": 0,
+        "y": 8
       }
     ],
     "security": {

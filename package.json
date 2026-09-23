@@ -12,14 +12,14 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-opener": "^2"
+    "@tauri-apps/plugin-global-shortcut": "^2.3.2"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
-    "vite": "^8.0.16",
-    "typescript": "~6.0.3"
+    "typescript": "~6.0.3",
+    "vite": "^8.0.16"
   },
-  "description": "Your screen buddy that watches along \u2014 Windows companion built with Tauri v2 + Rust",
+  "description": "Your screen buddy that watches along — Windows companion built with Tauri v2 + Rust",
   "author": "ssmurfgg04-gif",
   "license": "MIT",
   "engines": {

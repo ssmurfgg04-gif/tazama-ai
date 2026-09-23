@@ -21,8 +21,23 @@ export interface Suggestion {
 }
 
 const CHECK_HOURS = [6, 9, 12, 15, 18];
+const SHOWN_KEY = "tazama-morning-shown-at";
+const MIN_GAP_MS = 6 * 60 * 60 * 1000; // at most one morning block per 6h
 let lastCheckDate = "";
 let checkTimer: ReturnType<typeof setInterval> | null = null;
+
+function dueForMorningBlock(now: Date): boolean {
+  if (!CHECK_HOURS.includes(now.getHours())) return false;
+  try {
+    const last = Number(localStorage.getItem(SHOWN_KEY) ?? "0");
+    if (Date.now() - last < MIN_GAP_MS) return false;
+  } catch { /* storage unavailable -> allow */ }
+  return true;
+}
+
+export function markMorningShown(): void {
+  try { localStorage.setItem(SHOWN_KEY, String(Date.now())); } catch { /* ignore */ }
+}
 
 // ─── Schedule ─────────────────────────────────────────────────────────────────
 
@@ -42,10 +57,13 @@ export function startMorningRitual(onSuggestions: (s: Suggestion[]) => void): vo
     });
   }, 60_000); // check every minute
 
-  // Also check immediately
-  generateSuggestions().then(s => {
-    if (s.length > 0) onSuggestions(s);
-  });
+  // Immediate check only if a check-hour is due AND no block shown recently.
+  // Never fires on plain app launch outside check hours.
+  if (dueForMorningBlock(new Date())) {
+    generateSuggestions().then(s => {
+      if (s.length > 0) onSuggestions(s);
+    });
+  }
 }
 
 export function stopMorningRitual(): void {

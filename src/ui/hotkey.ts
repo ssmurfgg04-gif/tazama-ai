@@ -1,5 +1,5 @@
 ﻿/**
- * Hotkey UX â€” Tazama AI
+ * Hotkey UX -- Tazama AI
  *
  * Full keycap chip recorder with collision detection.
  * Better than HeyClicky's ClickyHotkeyRecorder because:
@@ -11,10 +11,9 @@
  * Mirrors: KeyCapChipRow, ClickyHotkeyConfiguration, ClickyHotkeyRecorder
  * Copy: "Press the modifiers you want", "Press your keys",
  *        "That matches one of your shortcuts. Pick a different combo."
- *        "Hold to talkâ€¦ Release to send."
+ *        "Hold to talk... Release to send."
  */
 
-import { invoke } from "@tauri-apps/api/core";
 import { playSoundCue } from "./sound-bus.js";
 
 export interface HotkeyConfig {
@@ -167,12 +166,16 @@ function checkCollision(shortcut: string): string | null {
 
 // â”€â”€â”€ Global shortcut registration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+import {
+  register as gsRegister,
+  unregister as gsUnregister,
+} from "@tauri-apps/plugin-global-shortcut";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+
 export async function registerHotkey(config: HotkeyConfig): Promise<boolean> {
   try {
-    await invoke("plugin:global-shortcut|register", {
-      shortcut: config.shortcut,
-      handler: null, // Tauri fires the event bus
-    });
+    await gsUnregister(config.shortcut).catch(() => null);
+    await gsRegister(config.shortcut, () => config.action());
     registeredHotkeys = registeredHotkeys.filter(h => h.id !== config.id);
     registeredHotkeys.push(config);
     return true;
@@ -185,9 +188,19 @@ export async function unregisterHotkey(id: string): Promise<void> {
   const h = registeredHotkeys.find(c => c.id === id);
   if (!h) return;
   try {
-    await invoke("plugin:global-shortcut|unregister", { shortcut: h.shortcut });
+    await gsUnregister(h.shortcut);
   } catch { /* ignore */ }
   registeredHotkeys = registeredHotkeys.filter(c => c.id !== id);
+}
+
+/** Toggle the main window (used by the built-in show/hide hotkey). */
+export async function toggleMainWindow(): Promise<void> {
+  try {
+    const win = getCurrentWindow();
+    const visible = await win.isVisible();
+    if (visible) await win.hide();
+    else { await win.show(); await win.setFocus(); }
+  } catch { /* ignore */ }
 }
 
 // â”€â”€â”€ Push-to-talk â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -196,7 +209,7 @@ export async function unregisterHotkey(id: string): Promise<void> {
 export function showPushToTalkPill(): () => void {
   const pill = document.createElement("div");
   pill.className = "ptt-pill glass";
-  pill.innerHTML = `<span class="ptt-dot"></span><span>Hold to talkâ€¦ Release to send.</span>`;
+  pill.innerHTML = `<span class="ptt-dot"></span><span>Hold to talk... Release to send.</span>`;
   Object.assign(pill.style, {
     position: "fixed", bottom: "80px", left: "50%",
     transform: "translateX(-50%)", zIndex: "9100",

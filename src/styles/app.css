@@ -672,6 +672,12 @@
 }
 .settings-row:last-child { border-bottom: none; }
 
+/* Column variant: label on top, recorder below (shortcuts section) */
+.settings-row-col {
+  flex-direction: column;
+  align-items: stretch;
+}
+
 .settings-row-info { display: flex; flex-direction: column; gap: 2px; }
 .settings-name  { font-size: var(--fs-body); font-weight: 500; color: var(--n10); }
 .settings-hint  { font-size: var(--fs-secondary); color: var(--n8); }
@@ -897,4 +903,313 @@
 }
 .suggested-card:hover::after {
   transform: translateX(100%);
+}
+
+/* ════════════════════════════════════════════
+   HUD OVERLAY WINDOW MODE (?overlay=hud)
+   Only the chip stack renders; everything else hidden.
+   Body is fully transparent — glass chips float on desktop.
+   ════════════════════════════════════════════ */
+
+body.overlay-mode {
+  background: transparent;
+}
+body.overlay-mode #app {
+  display: none;
+}
+body.overlay-mode #hud {
+  display: flex;
+  justify-content: center;
+  padding-top: 4px;
+  background: transparent;
+}
+body.overlay-mode .hud-root {
+  position: static;
+  transform: none;
+}
+
+/* ════════════════════════════════════════════
+   SHARED PAGE SCAFFOLD (agents / memory / skills)
+   ════════════════════════════════════════════ */
+
+.page-header {
+  margin-bottom: var(--sp-3);
+}
+.page-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-sheet);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--n11);
+}
+.page-sub {
+  font-size: var(--fs-secondary);
+  color: var(--n8);
+  margin-top: 2px;
+}
+.empty-note {
+  font-size: var(--fs-body);
+  color: var(--n7);
+  text-align: center;
+  padding: var(--sp-5) var(--sp-3);
+}
+
+/* ── Agents page ── */
+.agents-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-4);
+}
+.agent-card {
+  padding: var(--sp-3) var(--sp-4);
+}
+.agent-card.is-active {
+  border-color: var(--agent-accent, var(--accent));
+  box-shadow: 0 0 0 1px var(--agent-accent, var(--accent)), var(--sh-card);
+}
+.agent-card-top {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.agent-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.agent-active-badge {
+  margin-left: auto;
+  background: color-mix(in oklab, var(--ok) 18%, transparent);
+  color: var(--ok);
+  font-size: 11px;
+}
+.agent-desc {
+  font-size: var(--fs-body);
+  color: var(--n9);
+  margin-top: var(--sp-2);
+}
+.agent-meta {
+  font-size: var(--fs-caption);
+  color: var(--n7);
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.agent-actions {
+  display: flex;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+.agent-use-btn {
+  padding: 6px 14px;
+  border-radius: var(--r-pill);
+  border: none;
+  font-size: var(--fs-chip);
+  font-weight: 600;
+  --gel-tint: var(--accent-gel);
+}
+.agent-notes-btn,
+.agent-del-btn {
+  padding: 6px 12px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--n5);
+  background: transparent;
+  color: var(--n8);
+  font-size: var(--fs-chip);
+  cursor: pointer;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.agent-notes-btn:hover { background: var(--n3); color: var(--n10); }
+.agent-del-btn:hover {
+  background: color-mix(in oklab, var(--error) 15%, transparent);
+  color: var(--error);
+  border-color: color-mix(in oklab, var(--error) 40%, transparent);
+}
+.agent-notes { margin-top: var(--sp-2); }
+.agent-notes-pre {
+  font-family: var(--font-mono);
+  font-size: var(--fs-secondary);
+  color: var(--n9);
+  background: var(--n1);
+  border: 1px solid var(--n4);
+  border-radius: var(--r-card);
+  padding: var(--sp-2) var(--sp-3);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.agent-notes-row {
+  display: flex;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+.agent-notes-input {
+  flex: 1;
+  background: var(--n1);
+  border: 1px solid var(--n4);
+  border-radius: var(--r-card);
+  color: var(--n10);
+  font-size: var(--fs-body);
+  padding: var(--sp-2) var(--sp-3);
+  outline: none;
+  min-width: 0;
+}
+.agent-notes-input:focus { border-color: var(--accent); }
+.agent-notes-add {
+  padding: 6px 14px;
+  border-radius: var(--r-pill);
+  border: none;
+  font-size: var(--fs-chip);
+  font-weight: 600;
+  --gel-tint: var(--accent-gel);
+  flex-shrink: 0;
+}
+.agent-create {
+  padding: var(--sp-3) var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.agent-create h3 {
+  font-size: var(--fs-title);
+  color: var(--n11);
+}
+.agent-create-input {
+  background: var(--n1);
+  border: 1px solid var(--n4);
+  border-radius: var(--r-card);
+  color: var(--n10);
+  font-size: var(--fs-body);
+  font-family: var(--font-ui);
+  padding: var(--sp-2) var(--sp-3);
+  outline: none;
+  width: 100%;
+  resize: vertical;
+}
+.agent-create-input:focus { border-color: var(--accent); }
+.agent-create-input::placeholder { color: var(--n7); }
+.agent-create-btn {
+  padding: 8px 16px;
+  border-radius: var(--r-pill);
+  border: none;
+  font-size: var(--fs-chip);
+  font-weight: 600;
+  align-self: flex-start;
+  --gel-tint: var(--accent-gel);
+}
+
+/* ── Memory page ── */
+.memory-count {
+  font-size: var(--fs-secondary);
+  color: var(--accent-light);
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.memory-search-row {
+  display: flex;
+  gap: var(--sp-2);
+  margin: var(--sp-3) 0;
+}
+.memory-search-input {
+  flex: 1;
+  background: var(--n1);
+  border: 1px solid var(--n4);
+  border-radius: var(--r-card);
+  color: var(--n10);
+  font-size: var(--fs-body);
+  padding: var(--sp-2) var(--sp-3);
+  outline: none;
+  min-width: 0;
+}
+.memory-search-input:focus { border-color: var(--accent); }
+.memory-search-input::placeholder { color: var(--n7); }
+.memory-search-btn {
+  padding: 6px 16px;
+  border-radius: var(--r-pill);
+  border: none;
+  font-size: var(--fs-chip);
+  font-weight: 600;
+  flex-shrink: 0;
+  --gel-tint: var(--accent-gel);
+}
+.memory-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.memory-row {
+  padding: var(--sp-3);
+  position: relative;
+}
+.memory-text {
+  font-size: var(--fs-body);
+  color: var(--n10);
+  line-height: 1.5;
+  padding-right: 64px;
+}
+.memory-meta {
+  font-size: var(--fs-caption);
+  color: var(--n7);
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.memory-del-btn {
+  position: absolute;
+  top: var(--sp-2);
+  right: var(--sp-2);
+  font-size: var(--fs-caption);
+  color: var(--n7);
+  background: transparent;
+  border: 1px solid var(--n5);
+  border-radius: var(--r-pill);
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: color var(--t-fast), border-color var(--t-fast);
+}
+.memory-del-btn:hover {
+  color: var(--error);
+  border-color: color-mix(in oklab, var(--error) 40%, transparent);
+}
+
+/* ── Skills page ── */
+.skills-catalog {
+  margin-top: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.skill-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--t-fast), transform var(--t-fast);
+}
+.skill-row:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+.skill-row-icon {
+  font-size: 20px;
+  width: 32px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.skill-row-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.skill-row-body strong {
+  font-size: var(--fs-body);
+  color: var(--n10);
+}
+.skill-row-cat {
+  font-size: var(--fs-caption);
+  color: var(--n7);
 }

@@ -55,7 +55,7 @@ codegen-units = 1
 [dev-dependencies]
 # Same `keyring` the plugin wraps (unifies to the locked 3.6.x): lets tests
 # drive the real Credential Manager without constructing an App (mock apps
-# cannot run on this host â€” see secrets.rs module docs).
+# cannot run on this host -- see secrets.rs module docs).
 keyring = "3.6"
 wiremock = "0.6.5"
 
