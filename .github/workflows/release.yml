@@ -77,21 +77,36 @@ jobs:
       #
       # If NO signing secrets are set: installer ships unsigned.
       # Windows SmartScreen will show "More info → Run anyway" for unsigned builds.
+      #
+      # NOTE: the `secrets` context is NOT available in job-level `if:`
+      # expressions (it makes the whole workflow file invalid and GitHub
+      # fails every run at parse time). The availability check therefore
+      # lives inside the step script via an env-mapped secret.
 
       - name: Sign — Azure Trusted Signing
-        if: ${{ secrets.AZURE_CLIENT_ID != '' }}
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CS_ENDPOINT: ${{ secrets.AZURE_CS_ENDPOINT }}
+          AZURE_CS_ACCOUNT: ${{ secrets.AZURE_CS_ACCOUNT }}
+          AZURE_CS_PROFILE: ${{ secrets.AZURE_CS_PROFILE }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
         run: |
-          $installer = Get-ChildItem "src-tauri/target/release/bundle/nsis" -Filter "*.exe" | Select-Object -First 1
-          if (-not $installer) { exit 0 }
+          if ([string]::IsNullOrWhiteSpace($env:AZURE_CLIENT_ID)) {
+            Write-Host "No AZURE_CLIENT_ID secret set — skipping Azure Trusted Signing."
+            exit 0
+          }
+          $installer = Get-ChildItem "src-tauri/target" -Recurse -Filter "*-setup.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $installer) { Write-Host "No NSIS installer found to sign."; exit 0 }
           Write-Host "Signing with Azure Trusted Signing: $($installer.Name)"
           dotnet tool install --global Microsoft.Trusted.Signing.Client 2>$null
           TrustedSigning `
-            --endpoint    "${{ secrets.AZURE_CS_ENDPOINT }}" `
-            --account     "${{ secrets.AZURE_CS_ACCOUNT }}" `
-            --profile     "${{ secrets.AZURE_CS_PROFILE }}" `
-            --tenant-id   "${{ secrets.AZURE_TENANT_ID }}" `
-            --client-id   "${{ secrets.AZURE_CLIENT_ID }}" `
-            --client-secret "${{ secrets.AZURE_CLIENT_SECRET }}" `
+            --endpoint    "$env:AZURE_CS_ENDPOINT" `
+            --account     "$env:AZURE_CS_ACCOUNT" `
+            --profile     "$env:AZURE_CS_PROFILE" `
+            --tenant-id   "$env:AZURE_TENANT_ID" `
+            --client-id   "$env:AZURE_CLIENT_ID" `
+            --client-secret "$env:AZURE_CLIENT_SECRET" `
             --files "$($installer.FullName)" `
             --timestamp-rfc3161 http://timestamp.acs.microsoft.com `
             --file-digest sha256
@@ -103,16 +118,26 @@ jobs:
       - name: Locate build artifacts
         id: artifacts
         run: |
-          $nsis = Get-ChildItem "src-tauri/target/release/bundle/nsis" -Filter "*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          $msi  = Get-ChildItem "src-tauri/target/release/bundle/msi"  -Filter "*.msi" -ErrorAction SilentlyContinue | Select-Object -First 1
+          $nsis = Get-ChildItem "src-tauri/target" -Recurse -Filter "*-setup.exe" -ErrorAction SilentlyContinue |
+                  Where-Object { $_.FullName -like "*bundle*nsis*" } | Select-Object -First 1
+          $msi  = Get-ChildItem "src-tauri/target" -Recurse -Filter "*.msi" -ErrorAction SilentlyContinue |
+                  Where-Object { $_.FullName -like "*bundle*msi*" } | Select-Object -First 1
 
           if ($nsis) {
             Write-Host "NSIS: $($nsis.FullName) ($([math]::Round($nsis.Length/1MB,1)) MB)"
             echo "nsis_path=$($nsis.FullName)" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "::warning::No NSIS installer found anywhere under src-tauri/target"
           }
           if ($msi) {
             Write-Host "MSI: $($msi.FullName) ($([math]::Round($msi.Length/1MB,1)) MB)"
             echo "msi_path=$($msi.FullName)" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "::warning::No MSI package found anywhere under src-tauri/target"
+          }
+          if (-not $nsis -and -not $msi) {
+            Write-Host "::error::No installable artifacts produced — refusing to publish an empty release."
+            exit 1
           }
         shell: pwsh
 
@@ -150,8 +175,10 @@ jobs:
 
             | File | Size | Description |
             |------|------|-------------|
-            | `*-setup.exe` | ~15 MB | **Recommended** — NSIS installer |
+            | `*-setup.exe` | ~15 MB | **Recommended** — Windows NSIS installer |
             | `*.msi` | ~15 MB | Alternative — Windows Installer |
+            | `*.AppImage` | — | **Linux** — run anywhere, no install |
+            | `*.deb` | — | Linux — Debian/Ubuntu package |
 
             > **Windows SmartScreen notice:** If Windows shows a blue "Windows protected your PC" dialog, click **"More info"** → **"Run anyway"**. This is expected for new apps without an extended-validation certificate. [See why →](https://github.com/${{ github.repository }}#smartscreen)
 
@@ -167,3 +194,83 @@ jobs:
           files: |
             ${{ steps.artifacts.outputs.nsis_path }}
             ${{ steps.artifacts.outputs.msi_path }}
+
+  build-linux:
+    name: Build Linux (AppImage + deb)
+    runs-on: ubuntu-24.04
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Node.js ───────────────────────────────────────────────────────
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      # ── 3. Rust ──────────────────────────────────────────────────────────
+      - name: Setup Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          cache-on-failure: true
+
+      # ── 4. System deps (WebKitGTK 4.1 + friends) ─────────────────────────
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libpipewire-0.3-dev \
+            libgbm-dev \
+            libegl-dev \
+            patchelf
+
+      # ── 5. Frontend deps ─────────────────────────────────────────────────
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # ── 6. Build (AppImage + deb) ────────────────────────────────────────
+      - name: Build Tazama AI (Linux)
+        run: npm run tauri build
+        env:
+          CARGO_INCREMENTAL: '1'
+
+      # ── 7. Locate artifacts ──────────────────────────────────────────────
+      - name: Locate Linux artifacts
+        id: artifacts
+        run: |
+          appimage=$(find src-tauri/target -name '*.AppImage' 2>/dev/null | head -1)
+          deb=$(find src-tauri/target -name '*.deb' 2>/dev/null | head -1)
+          if [ -n "$appimage" ]; then
+            echo "AppImage: $appimage ($(du -h "$appimage" | cut -f1))"
+            echo "appimage_path=$appimage" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -n "$deb" ]; then
+            echo "deb: $deb ($(du -h "$deb" | cut -f1))"
+            echo "deb_path=$deb" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -z "$appimage" ] && [ -z "$deb" ]; then
+            echo "::error::No Linux artifacts produced."
+            exit 1
+          fi
+
+      # ── 8. Attach to the same release (files only, body stays) ───────────
+      - name: Attach Linux artifacts to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', inputs.version) }}
+          files: |
+            ${{ steps.artifacts.outputs.appimage_path }}
+            ${{ steps.artifacts.outputs.deb_path }}

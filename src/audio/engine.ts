@@ -33,7 +33,11 @@ class SoundEngine {
     await Promise.allSettled(
       CHIMES.map(async name => {
         try {
-          const resp = await fetch(`/assets/sounds/${name}.wav`);
+          // publicDir is src/assets, so its contents are served at the root:
+          // src/assets/sounds/<name>.wav -> /sounds/<name>.wav. The previous
+          // /assets/sounds/ path only exists in dev-style source layout and
+          // 404s in the packaged app (all chimes silently missing).
+          const resp = await fetch(`/sounds/${name}.wav`);
           if (!resp.ok) return;
           const buf = await resp.arrayBuffer();
           this.buffers.set(name, await this.ctx!.decodeAudioData(buf));

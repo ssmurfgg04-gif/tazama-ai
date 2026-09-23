@@ -6,9 +6,9 @@
 //! source file ONLY after all of that file's pairs persisted successfully. A
 //! persist failure aborts with `Err` and the source file is left on disk. A
 //! file that harvests to zero pairs is also left on disk (nothing was proven
-//! safe to delete â€” the original may hold data in an unknown shape).
+//! safe to delete -- the original may hold data in an unknown shape).
 //!
-//! Test note (R13): no `tauri::test::mock_builder()` anywhere on this host â€”
+//! Test note (R13): no `tauri::test::mock_builder()` anywhere on this host --
 //! manifest-less test binaries die at load (comctl32-v6 `TaskDialogIndirect`
 //! via muda/tray-icon; see `secrets.rs` module docs). Tests therefore cover
 //! [`harvest_file`] + [`remove_sources`] with temp files only. The
@@ -50,7 +50,7 @@ fn unquote(s: &str) -> &str {
 }
 
 /// Parse `KEY=VALUE` lines into `(provider, key)` pairs.
-///
+// ----------------------------------------------------------------------
 /// Only the five known `*_API_KEY` names map (see [`provider_for_env`]);
 /// blank lines, `#` comments, an optional `export ` prefix, empty values,
 /// and unknown names are skipped.
@@ -80,13 +80,13 @@ fn harvest_env_text(text: &str) -> Vec<(String, String)> {
 /// Read + parse a legacy key file WITHOUT touching anything on disk.
 ///
 /// Known shapes:
-/// - flat JSON object with string values (`{"anthropic":"sk-..."}`) â†’
+/// - flat JSON object with string values (`{"anthropic":"sk-..."}`) →
 ///   one pair per non-empty string value (key trimmed, value trimmed);
 /// - `KEY=VALUE` lines for the five known `*_API_KEY` names (see
 ///   [`harvest_env_text`]).
 ///
 /// Anything else (missing file, non-UTF8 bytes, unparsable content, JSON
-/// non-object or object with no string values) yields an empty vec â€” never
+/// non-object or object with no string values) yields an empty vec -- never
 /// an error. In particular this function MUST NOT delete the file (R14).
 pub(crate) fn harvest_file(path: &Path) -> Vec<(String, String)> {
     let Ok(text) = fs::read_to_string(path) else {
@@ -121,9 +121,9 @@ pub(crate) fn harvest_file(path: &Path) -> Vec<(String, String)> {
 }
 
 /// Delete the listed files, returning how many were actually removed.
-///
+// ----------------------------------------------------------------------
 /// Missing files are skipped silently (not errors, not counted). Any other
-/// I/O failure on a file is likewise skipped â€” migration must never fail
+/// I/O failure on a file is likewise skipped -- migration must never fail
 /// just because a stale source path is unreadable.
 pub(crate) fn remove_sources(paths: &[PathBuf]) -> u32 {
     let mut removed = 0u32;
@@ -161,8 +161,8 @@ pub(crate) fn resolve_candidates(candidates: &[String]) -> Vec<PathBuf> {
 }
 
 /// Migrate plaintext legacy keys into the OS keyring (persist-then-delete).
-///
-/// For each candidate path: harvest pairs â†’ `persist_key` each pair â†’ ONLY
+// ----------------------------------------------------------------------
+/// For each candidate path: harvest pairs → `persist_key` each pair → ONLY
 /// on full persist success, delete that source file (files harvesting to
 /// zero pairs are left alone). Returns the total pairs migrated. Any persist
 /// failure aborts with `Err` and that file is NOT deleted.
@@ -176,13 +176,13 @@ pub fn migrate_legacy_keys<R: Runtime>(
     for path in &paths {
         let pairs = harvest_file(path);
         // Persist FIRST: every pair must land in the keyring before the
-        // source file may be touched. `?` returns early â€” no delete below.
+        // source file may be touched. `?` returns early -- no delete below.
         for (provider, key) in &pairs {
             persist_key(&app, provider, key.clone())
                 .map_err(|e| format!("failed to migrate `{}`: {e}", path.display()))?;
         }
         // Delete ONLY after full persist success (and only when something
-        // was actually harvested â€” see module docs).
+        // was actually harvested -- see module docs).
         if !pairs.is_empty() {
             remove_sources(std::slice::from_ref(path));
         }
@@ -285,7 +285,7 @@ mod tests {
         assert_eq!(got, vec![PathBuf::from("a.json"), PathBuf::from("b.env")]);
         // Empty input must not invent paths: on this machine the Gleam
         // defaults almost surely don't exist, so expect empty; if they DO
-        // exist the fallback is working as specified â€” either way no panic.
+        // exist the fallback is working as specified -- either way no panic.
         let _ = resolve_candidates(&[]);
     }
 }

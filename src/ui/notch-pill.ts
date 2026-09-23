@@ -3,7 +3,7 @@
  *
  * Windows equivalent of HeyClicky's NotchWindowManager.
  * A pill anchored to the top-centre of the primary display, always-on-top,
- * with: resting silhouette â†’ hover-dwell ring â†’ expand surface â†’ live-event glow â†’ auto-dismiss.
+ * with: resting silhouette → hover-dwell ring → expand surface → live-event glow → auto-dismiss.
  *
  * Better than HeyClicky's Notch because:
  *   - Works on ANY Windows machine (no physical notch required)
@@ -24,7 +24,7 @@ let dwellTimer: ReturnType<typeof setTimeout> | null = null;
 let dismissTimer: ReturnType<typeof setInterval> | null = null;
 let dismissSecondsLeft = 8;
 
-// â”€â”€â”€ Mount â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ------ Mount ----------------------------------------------------------------------------------------------------------------------------------------
 
 export function mountNotchPill(root: HTMLElement): void {
   root.innerHTML = "";
@@ -72,7 +72,7 @@ export function mountNotchPill(root: HTMLElement): void {
   root.append(pill);
   pillEl = pill;
 
-  // Hover triggers dwell â†’ expand
+  // Hover triggers dwell → expand
   pill.addEventListener("mouseenter", onHover);
   pill.addEventListener("mouseleave", onLeave);
 
@@ -83,7 +83,7 @@ export function mountNotchPill(root: HTMLElement): void {
   });
 }
 
-// â”€â”€â”€ Hover / dwell â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ------ Hover / dwell ------------------------------------------------------------------------------------------------------------------------
 
 function onHover(): void {
   if (!pillEl) return;
@@ -108,7 +108,7 @@ function startDwellRing(onComplete: () => void): void {
   if (!ring) return;
   ring.style.setProperty("--dwell-progress", "0%");
   ring.classList.add("is-filling");
-  // Animate progress 0â†’100% over dwell-duration (350ms from tokens)
+  // Animate progress 0→100% over dwell-duration (350ms from tokens)
   const start = performance.now();
   const DWELL_MS = 350;
   const tick = (now: number) => {
@@ -130,7 +130,7 @@ function stopDwellRing(): void {
   if (ring) { ring.classList.remove("is-filling"); ring.style.setProperty("--dwell-progress", "0%"); }
 }
 
-// â”€â”€â”€ Expand / collapse â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ------ Expand / collapse ----------------------------------------------------------------------------------------------------------------
 
 function expandSurface(content?: string): void {
   const pill    = document.getElementById("notch-pill");
@@ -151,7 +151,7 @@ function collapseSurface(): void {
   playSoundCue("text-close");
 }
 
-// â”€â”€â”€ Live-event corner glow â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ------ Live-event corner glow ------------------------------------------------------------------------------------------------------
 
 export function flashLiveEvent(durationMs = 3000): void {
   const pill = document.getElementById("notch-pill");
@@ -160,10 +160,14 @@ export function flashLiveEvent(durationMs = 3000): void {
   setTimeout(() => pill.classList.remove("has-live-event"), durationMs);
 }
 
-// â”€â”€â”€ Auto-dismiss â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ------ Auto-dismiss --------------------------------------------------------------------------------------------------------------------------
 
 export function showAutoDismiss(message: string, onDismiss?: () => void): void {
-  expandSurface(`<p class="notch-message">${message}</p>`);
+  // textContent, never innerHTML: callers may one day pass AI text (BUG-07).
+  const p = document.createElement("p");
+  p.className = "notch-message";
+  p.textContent = message;
+  expandSurface(p.outerHTML);
   dismissSecondsLeft = 8;
   const clock = document.getElementById("notch-dismiss-clock");
   if (clock) {
@@ -186,7 +190,7 @@ function cancelAutoDismiss(): void {
   if (clock) clock.style.display = "none";
 }
 
-// â”€â”€â”€ Phase sync â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ------ Phase sync ------------------------------------------------------------------------------------------------------------------------------
 
 function onAgentPhase(phase: MascotExpression): void {
   setExpression(phase);

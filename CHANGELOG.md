@@ -1,5 +1,84 @@
 # Changelog
 
+## [0.2.1] — 2026-09-23
+
+### Childhood cast — the Saturday-morning roster
+
+- 43 real childhood characters across 19 shows: SpongeBob SquarePants (7),
+  The Fairly OddParents (6), Avatar: The Last Airbender (6), Dexter's
+  Laboratory, The Powerpuff Girls, Ed Edd n Eddy, Courage the Cowardly Dog,
+  Foster's Home, Codename: Kids Next Door, Samurai Jack, Johnny Bravo, Ben 10,
+  Invader Zim, Hey Arnold!, Rugrats, Jimmy Neutron, Danny Phantom,
+  Kim Possible and Phineas and Ferb
+- Web-sourced avatar art for every character (hunted via image search,
+  square-cropped, palette-optimised to ~8 KB each) shown as circular
+  portraits in the cast wall, detail pane, name-tag and header buddy chip
+- Full voice metadata per character: original voice actor credit, speech
+  style, signature catchphrases, and one iconic clip line with show context
+- Voice acting: per-character TTS profile (pitch/rate/gender) performed
+  through the Web Speech API — a ▶ button in each detail pane plays the
+  character's iconic line in a tuned system voice (graceful no-op when no
+  voices are available)
+- Gleam-style cast wall for the narrow HomeSpace window: horizontally
+  scrolling show chips, 3–4 column avatar grid above the fold, centred
+  detail pane; search now matches show, era, actor and catchphrases
+- Persona system prompts for every childhood character drive the AI's
+  voice in chat (verified live: Patrick Star's naps and Wanda's wish-safety
+  both survive contact with a real model)
+
+## [0.2.0] — 2026-09-22
+
+### Characters — cast your buddy
+
+- 16 original castable characters across 8 archetype families (Sci-Fi Chaos,
+  Office Sitcom, Meadowcore, Fantasy Quest, Detective Noir, Saturday Morning,
+  Deep Sea Radio, Cozy Slice-of-Life) plus the Tazama classic eye
+- Gleam-inspired "Cast a buddy" page: search, family filters, persona detail
+  with traits and sample line, one-click cast, Surprise me shuffle
+- Casting changes everything: accent colour, header buddy chip, name-tag
+  greeting, personalised starter prompts, and the AI's voice via a persona
+  system prompt prepended to chat completions
+
+### Personality & Apple-taste UI overhaul
+
+- Ambient aurora background replaces the flat black canvas (accent-tinted,
+  drifts slowly, honours the animations toggle and reduced motion)
+- Liquid-Glass material pass: floating dock rail with gel active pill and
+  hover tooltips, glass suggested cards with accent lift, elevated composer
+  with scroll-edge shadow, glass settings groups
+- HeyClicky "Hello my name is" name-tag sticker as the Home identity moment
+- Settings rows rebuilt as a predictable grid with pill action buttons
+- Visible keyboard focus rings everywhere (HIG)
+- Notch pill + HUD step aside inside the app window (they are ambient
+  overlays; the header buddy chip is the in-app presence)
+
+### AI providers
+
+- New `zai` provider for the Z.ai open platform (GLM models, Bearer key)
+- New `zai-local` provider: chat through the locally-authenticated
+  z-ai-web-dev-sdk via `scripts/zai-proxy.mjs` (OpenAI-compatible localhost
+  proxy on 127.0.0.1:8788 — zero keys needed)
+
+### Linux support
+
+- Full Linux port: UIA/SendKeys code paths are Windows-gated; Linux ships
+  screenshot capture (xcap) with graceful fallbacks for computer-use
+- Keys: Linux sessions without a secret service fall back to a 0600 file
+  store inside the app-data dir
+- Release pipeline now builds Linux AppImage + deb alongside the Windows
+  NSIS + MSI; build-check runs the full Rust test suite on Linux too
+
+### Fixed
+
+- Conversation transcript duplicated every bubble on each message render
+  (append-only renderMessages never cleared the container first)
+
+### QA
+
+- Windows QA workflow now quiets the desktop before screenshots: minimises
+  all windows and hides the runner host console so evidence shows only the app
+
+
 All notable changes to Tazama AI are documented here.
 
 ## [0.1.0] — 2026-09-22

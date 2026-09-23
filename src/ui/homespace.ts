@@ -14,6 +14,22 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { PROVIDERS } from "../settings.js";
+import {
+  buildBuddyChip,
+  getActiveCharacter,
+  renderCharactersPage,
+  renderBuddyFace,
+  CharacterDef,
+} from "./characters.js";
+
+/** Persona voice as a real system prompt (SEC-02: not a fake user turn). */
+function personaSystem(): string | null {
+  const c = getActiveCharacter();
+  if (c.id === "tazama-classic") return null;
+  return `[Persona instructions — follow while replying]\n${c.voice}`;
+}
 
 /* ─── Types ─── */
 interface TazamaMessage {
@@ -33,6 +49,9 @@ type Phase = "idle" | "thinking" | "listening" | "speaking" | "done" | "needs-yo
 
 let messages: TazamaMessage[] = [];
 let animationsEnabled = true;
+// Screenshot pixels waiting to ride along on the next user turn (BUG-02:
+// previously captured and discarded — the headline feature was a no-op).
+let pendingScreenshot: string | null = null;
 
 /* ─── Root elements ─── */
 export function mountHomeSpace(root: HTMLElement): void {
@@ -54,6 +73,33 @@ export function mountHomeSpace(root: HTMLElement): void {
   // Initial suggestions shimmer while loading
   showShimmer(body);
   setTimeout(() => showSuggestions(body), 800);
+
+  // ── Cross-surface events ──
+  // Buddy chip in the header → jump to Characters page
+  document.addEventListener("tazama:open-characters", () => {
+    const railBtn = document.querySelector<HTMLButtonElement>('.rail-row[data-page="characters"]');
+    railBtn?.click();
+  });
+
+  // A new buddy was cast → refresh the suggestions view + tell the mascot
+  document.addEventListener("tazama:buddy-cast", (e: Event) => {
+    const buddy = (e as CustomEvent<CharacterDef>).detail;
+    document.dispatchEvent(new CustomEvent("tazama:phase", { detail: "happy" }));
+    const bodyEl = document.querySelector(".homespace-body");
+    if (bodyEl && !document.getElementById("transcript")) {
+      showSuggestions(bodyEl as HTMLElement);
+    }
+    // Keep the header chip in sync even when Settings re-rendered it
+    const chip = document.querySelector(".buddy-chip");
+    if (chip) {
+      const face = chip.querySelector(".buddy-chip-face");
+      const name = chip.querySelector(".buddy-chip-name");
+      const craft = chip.querySelector(".buddy-chip-craft");
+      if (face) face.replaceWith(renderBuddyFace(buddy, "buddy-chip-face"));
+      if (name) name.textContent = buddy.name;
+      if (craft) craft.textContent = buddy.craft;
+    }
+  });
 }
 
 /* ─── Compact rail ─── */
@@ -64,11 +110,12 @@ function buildRail(): HTMLElement {
   rail.setAttribute("aria-label", "Pages");
 
   const pages = [
-    { iconFile: "home",     label: "Home",     id: "home"     },
-    { iconFile: "agents",   label: "Agents",   id: "agents"   },
-    { iconFile: "zap",      label: "Skills",   id: "skills"   },
-    { iconFile: "settings", label: "Settings", id: "settings" },
-    { iconFile: "memory",   label: "Memory",   id: "memory"   },
+    { iconFile: "home",       label: "Home",       id: "home"       },
+    { iconFile: "characters", label: "Characters", id: "characters" },
+    { iconFile: "agents",     label: "Agents",     id: "agents"     },
+    { iconFile: "zap",        label: "Skills",     id: "skills"     },
+    { iconFile: "settings",   label: "Settings",   id: "settings"   },
+    { iconFile: "memory",     label: "Memory",     id: "memory"     },
   ];
 
   pages.forEach((p, i) => {
@@ -102,39 +149,50 @@ function selectPage(id: string, rail: HTMLElement, btn: HTMLButtonElement): void
   const body = document.querySelector(".homespace-body");
   if (!body) return;
   // Every rail page renders its own surface — never fall through to suggestions.
+  // Lazy imports carry .catch() so a failed chunk shows an error, not a void.
+  const renderFailed = (page: string) => (err: unknown) => {
+    console.error(`[tazama] failed to load ${page} page`, err);
+    body.innerHTML = "";
+    const note = document.createElement("p");
+    note.className = "empty-note";
+    note.textContent = `Could not open ${page}. Restart the app and try again.`;
+    body.append(note);
+  };
   if (id === "settings") {
     body.innerHTML = "";
-    import("./settings-page.js").then(m => m.renderSettings(body as HTMLElement));
+    import("./settings-page.js").then(m => m.renderSettings(body as HTMLElement)).catch(renderFailed("Settings"));
+  } else if (id === "characters") {
+    body.innerHTML = "";
+    renderCharactersPage(body as HTMLElement);
   } else if (id === "agents") {
     body.innerHTML = "";
-    import("./agents-page.js").then(m => m.renderAgentsPage(body as HTMLElement));
+    import("./agents-page.js").then(m => m.renderAgentsPage(body as HTMLElement)).catch(renderFailed("Agents"));
   } else if (id === "skills") {
     body.innerHTML = "";
-    import("./skills-page.js").then(m => m.renderSkillsPage(body as HTMLElement));
+    import("./skills-page.js").then(m => m.renderSkillsPage(body as HTMLElement)).catch(renderFailed("Skills"));
   } else if (id === "memory") {
     body.innerHTML = "";
-    import("./memory-page.js").then(m => m.renderMemoryPage(body as HTMLElement));
+    import("./memory-page.js").then(m => m.renderMemoryPage(body as HTMLElement)).catch(renderFailed("Memory"));
   } else {
     showSuggestions(body as HTMLElement);
   }
 }
 
 /* ─── Header ─── */
+/* Buddy chip (current cast) on the left, close on the right. */
 function buildHeader(): HTMLElement {
   const hdr = document.createElement("header");
   hdr.className = "homespace-header";
 
-  const title = document.createElement("span");
-  title.className = "homespace-title";
-  title.textContent = "Tazama AI";
+  hdr.append(buildBuddyChip());
 
   const closeBtn = document.createElement("button");
   closeBtn.className = "header-btn";
   closeBtn.setAttribute("aria-label", "Close");
   closeBtn.textContent = "✕";
-  closeBtn.addEventListener("click", () => invoke("plugin:window|close"));
+  closeBtn.addEventListener("click", () => getCurrentWindow().close());
 
-  hdr.append(title, closeBtn);
+  hdr.append(closeBtn);
   return hdr;
 }
 
@@ -167,22 +225,42 @@ function showShimmer(container: HTMLElement): void {
 }
 
 /* ─── Suggestions ─── */
-/* Mirrors HomeSpaceSuggestionsPage / HomeSpaceSuggestedTaskCard */
+/* HomeSpaceSuggestionsPage / HomeSpaceSuggestedTaskCard — now persona-flavoured:
+ * a "Hello my name is" name-tag sticker (HeyClicky DNA) introduces the buddy,
+ * then their own starter prompts. */
 function showSuggestions(container: HTMLElement): void {
   container.innerHTML = "";
+  const buddy = getActiveCharacter();
+
+  // Name-tag sticker — the personality moment
+  const tag = document.createElement("div");
+  tag.className = "name-tag";
+  tag.style.setProperty("--char-accent", buddy.accent);
+
+  const tagHello = document.createElement("span");
+  tagHello.className = "name-tag-hello";
+  tagHello.textContent = "Hello, my name is";
+
+  const tagFace = renderBuddyFace(buddy, "name-tag-face");
+
+  const tagName = document.createElement("span");
+  tagName.className = "name-tag-name";
+  tagName.textContent = buddy.name;
+
+  const tagLine = document.createElement("span");
+  tagLine.className = "name-tag-line";
+  tagLine.textContent = buddy.greeting;
+
+  tag.append(tagHello, tagFace, tagName, tagLine);
+  container.append(tag);
 
   const label = document.createElement("p");
   label.className = "section-label";
-  label.textContent = "SUGGESTED FOR YOU";
+  label.textContent = buddy.id === "tazama-classic" ? "SUGGESTED FOR YOU" : "ON THEIR MIND TODAY";
 
   container.append(label);
 
-  const suggestions = [
-    "Summarise what's on my screen",
-    "What's my next calendar event?",
-    "Draft a reply to the top email",
-    "Help me debug this error",
-  ];
+  const suggestions = buddy.suggestions;
 
   suggestions.forEach((text, i) => {
     const card = document.createElement("button");
@@ -199,7 +277,9 @@ function showSuggestions(container: HTMLElement): void {
 
   const footer = document.createElement("p");
   footer.className = "suggestions-footer";
-  footer.textContent = "Come back tomorrow for fresh ideas from your Tazama agents.";
+  footer.textContent = buddy.id === "tazama-classic"
+    ? "Come back tomorrow for fresh ideas from your Tazama agents."
+    : `Ask ${buddy.name} anything — or cast someone new from Characters.`;
   container.append(footer);
 }
 
@@ -214,6 +294,9 @@ function showConversation(container: HTMLElement): void {
 }
 
 function renderMessages(transcript: HTMLElement): void {
+  // Clear first — this renders the FULL transcript every time (append-only
+  // would duplicate every bubble on each state change).
+  transcript.innerHTML = "";
   messages.forEach(msg => {
     const bubble = document.createElement("div");
     bubble.className = `bubble bubble-${msg.role}`;
@@ -324,8 +407,9 @@ function buildComposer(): HTMLElement {
   attachBtn.addEventListener("click", async () => {
     attachBtn.style.opacity = ".4";
     try {
-      await invoke<{base64_png:string}>("screenshot");
-      // Append screenshot reference to input
+      const shot = await invoke<{base64_png:string}>("screenshot");
+      // Keep the pixels — sendMessage attaches them to the next user turn.
+      pendingScreenshot = shot.base64_png;
       input.value = (input.value.trim() + "\n[screenshot attached]").trim();
       input.dispatchEvent(new Event("input"));
       // Store in memory for context
@@ -353,6 +437,31 @@ function buildComposer(): HTMLElement {
 
   composer.append(attachBtn, input, sendBtn);
   return composer;
+}
+
+/* ─── Provider selection ─── */
+/* The chat must work with WHATEVER key the user stored (README tells them
+ * to start with Anthropic or Groq). Pick the first provider that has a
+ * key in the OS keyring; fall back to Anthropic if probing fails. */
+const DEFAULT_MODELS: Record<string, string> = {
+  anthropic: "claude-haiku-4-5",
+  openai:    "gpt-4o-mini",
+  groq:      "llama-3.3-70b-versatile",
+  nvidia:    "meta/llama-3.1-70b-instruct",
+  zai:       "glm-4.6",
+  "zai-local": "glm-4.6",
+};
+
+export async function pickProvider(): Promise<{ provider: string; model: string }> {  for (const def of PROVIDERS) {
+    if (def.id === "fish") continue; // speech-only provider, no chat endpoint
+    try {
+      const has = await invoke<boolean>("key_has", { provider: def.id });
+      if (has) {
+        return { provider: def.id, model: DEFAULT_MODELS[def.id] ?? "default" };
+      }
+    } catch { /* keyring miss — try next provider */ }
+  }
+  return { provider: "anthropic", model: DEFAULT_MODELS.anthropic };
 }
 
 /* ─── Message flow ─── */
@@ -395,20 +504,32 @@ async function sendMessage(text: string, container: HTMLElement): Promise<void> 
       }
     } catch { /* memory DB not yet ready — continue without */ }
 
-    // Build messages: optional memory context as system-level prefix
-    const aiMessages = memoryContext
-      ? [
-          { role: "user", content: `[Context from memory]\n${memoryContext}` },
-          { role: "assistant", content: "Understood, I have that context." },
-          { role: "user", content: text },
-        ]
-      : [{ role: "user", content: text }];
+    // Build messages: persona as a REAL system prompt (not a fake user/
+    // assistant turn pair — user messages can override those, a system
+    // prompt cannot be talked out of), plus optional memory context.
+    // Screenshot pixels ride on this turn, then clear.
+    const persona = personaSystem();
+    const images = pendingScreenshot ? [pendingScreenshot] : null;
+    pendingScreenshot = null;
+    const aiMessages = [
+      ...(memoryContext
+        ? [
+            { role: "user", content: `[Context from memory]\n${memoryContext}` },
+            { role: "assistant", content: "Understood, I have that context." },
+          ]
+        : []),
+      { role: "user", content: text },
+    ];
 
     // Invoke Rust provider (keys from OS keyring — never from JS)
+    const { provider, model } = await pickProvider();
     const result = await invoke<string>("chat_complete", {
-      provider: "anthropic",
-      model: "claude-haiku-4-5",
+      provider,
+      model,
       messages: aiMessages,
+      system: persona,
+      max_tokens: 4096,
+      images,
     });
 
     assistantMsg.content = result;

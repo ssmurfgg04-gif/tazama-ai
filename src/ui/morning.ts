@@ -13,6 +13,14 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { pickProvider } from "./homespace.js";
+
+interface MemoryItem {
+  id:         string;
+  content:    string;
+  created_at: string;
+  score:      number;
+}
 
 export interface Suggestion {
   id:       string;
@@ -71,18 +79,25 @@ export function stopMorningRitual(): void {
 }
 
 async function generateSuggestions(): Promise<Suggestion[]> {
-  // Recall recent memory to personalise suggestions
+  // Recall recent memory to personalise suggestions (typed: Rust returns
+  // Vec<Memory>, not a string — BUG-03 was `${memory}` → "[object Object]").
   try {
-    const memory = await invoke<string>("memory_recall", { n: 6 });
+    const mems = await invoke<MemoryItem[]>("memory_recall", { n: 6 });
+    const memoryContext = mems.map(m => `- ${m.content}`).join("\n");
     const hour = new Date().getHours();
     const timeCtx = hour < 10 ? "morning" : hour < 14 ? "midday" : "afternoon";
 
-    // Generate via AI using recalled context
-    const prompt = `You are Tazama AI's morning-ritual system. Based on this memory context:\n${memory}\n\nGenerate exactly 3 short (≤8 words each), specific, actionable ${timeCtx} suggestions for the user. Return as JSON array: [{"id":"1","text":"...","context":"..."}]`;
+    // Generate via AI using recalled context (works with WHATEVER key the
+    // user stored — BUG-05 was a hardcoded Anthropic provider).
+    const prompt = `You are Tazama AI's morning-ritual system. Based on this memory context:\n${memoryContext}\n\nGenerate exactly 3 short (8 words or fewer each), specific, actionable ${timeCtx} suggestions for the user. Return as JSON array: [{"id":"1","text":"...","context":"..."}]`;
+    const { provider, model } = await pickProvider();
     const raw = await invoke<string>("chat_complete", {
-      provider: "anthropic",
-      model: "claude-haiku-4-5",
+      provider,
+      model,
       messages: [{ role: "user", content: prompt }],
+      system: null,
+      max_tokens: 500,
+      images: null,
     });
 
     const match = raw.match(/\[[\s\S]*?\]/);

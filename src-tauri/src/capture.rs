@@ -89,6 +89,7 @@ pub async fn screenshot() -> Result<ScreenshotResult, String> {
 
 // ─── UI Element walk ──────────────────────────────────────────────────────────
 
+#[cfg(windows)]
 #[tauri::command]
 pub fn get_ui_elements(max_depth: Option<u32>) -> Vec<ScreenElement> {
     let depth = max_depth.unwrap_or(3).min(5);
@@ -101,6 +102,7 @@ pub fn get_ui_elements(max_depth: Option<u32>) -> Vec<ScreenElement> {
     out
 }
 
+#[cfg(windows)]
 fn walk(
     auto: &uiautomation::UIAutomation,
     el: &uiautomation::UIElement,
@@ -150,6 +152,7 @@ fn walk(
 // Uses PowerShell for mouse/keyboard (avoids unsafe Win32 complexity)
 // and matches Anthropic computer_toolset_20260801 batch semantics.
 
+#[cfg(windows)]
 #[tauri::command]
 pub fn cu_exec(action: CUAction) -> Result<String, String> {
     let scale = action.scale_factor.unwrap_or(1.0);
@@ -193,22 +196,32 @@ pub fn cu_exec(action: CUAction) -> Result<String, String> {
 
         "type" => {
             let text = action.text.ok_or("text required")?;
-            // Escape special SendKeys chars
-            let escaped = text
-                .replace('{', "{{}}")
-                .replace('}', "{}}")
-                .replace('(', "{(}")
-                .replace(')', "{)}")
-                .replace('[', "{[}")
-                .replace(']', "{]}")
-                .replace('+', "{+}")
-                .replace('^', "{^}")
-                .replace('%', "{%}")
-                .replace('~', "{~}");
-            ps_run(&format!(
+            // Escape special SendKeys chars — single pass, because chained
+            // `.replace` calls re-process characters introduced by earlier
+            // passes (e.g. `{` -> `{{}}` then corrupts the inserted `}`).
+            let mut escaped = String::with_capacity(text.len());
+            for c in text.chars() {
+                match c {
+                    '{' => escaped.push_str("{{}"),
+                    '}' => escaped.push_str("{}}"),
+                    '(' => escaped.push_str("{(}"),
+                    ')' => escaped.push_str("{)}"),
+                    '[' => escaped.push_str("{[}"),
+                    ']' => escaped.push_str("{]}"),
+                    '+' => escaped.push_str("{+}"),
+                    '^' => escaped.push_str("{^}"),
+                    '%' => escaped.push_str("{%}"),
+                    '~' => escaped.push_str("{~}"),
+                    _   => escaped.push(c),
+                }
+            }
+            // Pass via env var so no quote in the text can break out of the
+            // PowerShell string literal (see ps_run_env).
+            ps_run_env(
                 "Add-Type -AssemblyName System.Windows.Forms; \
-                 [System.Windows.Forms.SendKeys]::SendWait('{escaped}');"
-            ))?;
+                 [System.Windows.Forms.SendKeys]::SendWait($Env:TAZAMA_TEXT);",
+                &[("TAZAMA_TEXT", &escaped)],
+            )?;
             Ok("OK".to_string())
         }
 
@@ -271,9 +284,23 @@ pub fn cu_exec(action: CUAction) -> Result<String, String> {
     }
 }
 
+#[cfg(windows)]
 fn ps_run(script: &str) -> Result<String, String> {
-    let out = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", script])
+    ps_run_env(script, &[])
+}
+
+/// PowerShell runner with extra environment variables. SECURITY: dynamic
+/// text must travel via env vars (e.g. `TAZAMA_TEXT`), NEVER via inline
+/// string formatting into the script — a quote in the text would break out
+/// of the PowerShell string literal (injection).
+#[cfg(windows)]
+fn ps_run_env(script: &str, envs: &[(&str, &str)]) -> Result<String, String> {
+    let mut cmd = std::process::Command::new("powershell");
+    cmd.args(["-NoProfile", "-NonInteractive", "-Command", script]);
+    for (k, v) in envs {
+        cmd.env(k, v);
+    }
+    let out = cmd
         .output()
         .map_err(|e| format!("powershell: {e}"))?;
     if out.status.success() {
@@ -283,6 +310,7 @@ fn ps_run(script: &str) -> Result<String, String> {
     }
 }
 
+#[cfg(windows)]
 fn key_to_sendkeys(key: &str) -> Result<String, String> {
     let mut result = String::new();
     for part in key.split('+') {
@@ -309,18 +337,60 @@ fn key_to_sendkeys(key: &str) -> Result<String, String> {
 
 // ─── Clipboard write ──────────────────────────────────────────────────────────
 
+#[cfg(windows)]
 #[allow(dead_code)]
 #[tauri::command]
 pub fn clipboard_write_capture(text: String) -> Result<(), String> {
-    // Use Set-Clipboard (PowerShell 5+, always available on Windows 10/11)
-    ps_run(&format!(
-        "Set-Clipboard -Value '{}'",
-        text.replace('\'', "''")
-    ))?;
+    // Use Set-Clipboard (PowerShell 5+, always available on Windows 10/11).
+    // Text travels via env var so quotes can never break the script (SEC-03).
+    ps_run_env(
+        "Set-Clipboard -Value $Env:TAZAMA_TEXT",
+        &[("TAZAMA_TEXT", &text)],
+    )?;
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(not(windows))]
+#[tauri::command]
+pub fn get_ui_elements(_max_depth: Option<u32>) -> Vec<ScreenElement> {
+    Vec::new()
+}
+
+#[cfg(not(windows))]
+#[tauri::command]
+pub fn cu_exec(_action: CUAction) -> Result<String, String> {
+    Err("computer-use actions need Windows right now — screenshots still work on Linux".into())
+}
+
+#[cfg(not(windows))]
+#[allow(dead_code)]
+#[tauri::command]
+pub fn clipboard_write_capture(text: String) -> Result<(), String> {
+    // Try wl-copy (Wayland) then xclip (X11) — degrade gracefully.
+    for (bin, args) in [
+        ("wl-copy", &["--primary"][..]),
+        ("xclip", &["-selection", "clipboard"][..]),
+    ] {
+        if let Ok(mut child) = std::process::Command::new(bin)
+            .args(args)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+        {
+            use std::io::Write;
+            if let Some(mut sin) = child.stdin.take() {
+                let _ = sin.write_all(text.as_bytes());
+            }
+            if child.wait().map(|s| s.success()).unwrap_or(false) {
+                return Ok(());
+            }
+        }
+    }
+    Err("clipboard needs wl-copy or xclip installed".into())
+}
+
+#[cfg(all(test, windows))]
 mod tests {
     use super::*;
 
@@ -349,5 +419,36 @@ mod tests {
     fn key_to_sendkeys_enter() {
         let s = key_to_sendkeys("Return").unwrap();
         assert_eq!(s, "{ENTER}");
+    }
+
+    // Mirrors the `type` action's inline escaping — keep in sync.
+    fn escape_sendkeys(text: &str) -> String {
+        let mut escaped = String::with_capacity(text.len());
+        for c in text.chars() {
+            match c {
+                '{' => escaped.push_str("{{}"),
+                '}' => escaped.push_str("{}}"),
+                '(' => escaped.push_str("{(}"),
+                ')' => escaped.push_str("{)}"),
+                '[' => escaped.push_str("{[}"),
+                ']' => escaped.push_str("{]}"),
+                '+' => escaped.push_str("{+}"),
+                '^' => escaped.push_str("{^}"),
+                '%' => escaped.push_str("{%}"),
+                '~' => escaped.push_str("{~}"),
+                _   => escaped.push(c),
+            }
+        }
+        escaped
+    }
+
+    #[test]
+    fn sendkeys_escaping_single_pass_is_correct() {
+        assert_eq!(escape_sendkeys("{"), "{{}");
+        assert_eq!(escape_sendkeys("}"), "{}}");
+        assert_eq!(escape_sendkeys("{}"), "{{}{}}");
+        assert_eq!(escape_sendkeys("a+b"), "a{+}b");
+        assert_eq!(escape_sendkeys("(x)"), "{(}x{)}");
+        assert_eq!(escape_sendkeys("plain text"), "plain text");
     }
 }

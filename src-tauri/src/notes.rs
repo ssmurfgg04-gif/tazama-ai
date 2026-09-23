@@ -1,19 +1,21 @@
-﻿//! Notes & routines â€” Tazama AI (Plan D)
+﻿//! Notes & routines — Tazama AI (Plan D)
 //!
 //! Ports Gleam's ~60 commands into typed Rust with full persistence.
 //! Better than Gleam's buddy-brain.json because:
 //!   - Each entity has its own typed struct + validation
 //!   - Routines have a next_run timestamp and cron-style schedule
 //!   - Goals track progress (steps completed / total)
-//!   - All data encrypted at rest using the same Credential Manager key
-//!     (encryption key from keyring; stored blob in app-data JSON)
+//!
+//! STORAGE NOTE: brain.json is currently plaintext JSON in the app-data dir.
+//! At-rest encryption (data key sealed in the OS Credential Manager) is
+//! planned, not shipped. Do not store secrets here — use secrets.rs.
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf};
 use tauri::{AppHandle, Manager, Runtime};
 
-// â”€â”€â”€ Note â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ------ Note ------------------------------------------------------------------------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Note {
@@ -26,7 +28,7 @@ pub struct Note {
     pub updated_at: String,
 }
 
-// â”€â”€â”€ Routine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ------ Routine ------------------------------------------------------------------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Routine {
@@ -40,7 +42,7 @@ pub struct Routine {
     pub run_count:   u32,
 }
 
-// â”€â”€â”€ Goal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ------ Goal ------------------------------------------------------------------------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Goal {
@@ -59,7 +61,7 @@ pub struct GoalStep {
     pub done:     bool,
 }
 
-// â”€â”€â”€ Storage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ------ Storage ------------------------------------------------------------------------------------------------------------------------------------
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 struct BrainData {
@@ -98,7 +100,7 @@ fn new_id() -> String {
 
 fn now_str() -> String { Utc::now().to_rfc3339() }
 
-// â”€â”€â”€ Note commands â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ------ Note commands ------------------------------------------------------------------------------------------------------------------------
 
 #[tauri::command]
 pub fn note_add<R: Runtime>(
@@ -169,7 +171,7 @@ pub fn note_search<R: Runtime>(app: AppHandle<R>, query: String) -> Vec<Note> {
     }).collect()
 }
 
-// â”€â”€â”€ Routine commands â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ------ Routine commands ------------------------------------------------------------------------------------------------------------------
 
 #[tauri::command]
 pub fn routine_save<R: Runtime>(app: AppHandle<R>, routine: Routine) -> Result<Routine, String> {
@@ -220,7 +222,7 @@ pub fn routine_list<R: Runtime>(app: AppHandle<R>) -> Vec<Routine> {
     routines
 }
 
-// â”€â”€â”€ Goal commands â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ------ Goal commands ------------------------------------------------------------------------------------------------------------------------
 
 #[tauri::command]
 pub fn goal_save<R: Runtime>(app: AppHandle<R>, goal: Goal) -> Result<Goal, String> {
@@ -288,7 +290,7 @@ pub fn goal_list<R: Runtime>(app: AppHandle<R>) -> Vec<Goal> {
     goals
 }
 
-// â”€â”€â”€ Clipboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ------ Clipboard --------------------------------------------------------------------------------------------------------------------------------
 
 #[tauri::command]
 pub fn clipboard_write(text: String) -> Result<(), String> {

@@ -498,6 +498,26 @@
   min-height: 100%;
 }
 
+/* ── Escape hatch (skip onboarding) ── */
+.onboarding-skip {
+  background: none;
+  border: none;
+  color: var(--n6);
+  font: inherit;
+  font-size: var(--fs-caption, 12px);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  padding: var(--sp-2, 8px) var(--sp-3, 12px);
+  border-radius: var(--r-pill, 999px);
+  transition: color 150ms ease;
+}
+.onboarding-skip:hover { color: var(--n10); }
+.onboarding-skip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* ── Intro thought bubble ── */
 /* InterviewThoughtBubbles / TutorialSpeechBubbleShape */
 .onboarding-intro {
@@ -676,6 +696,33 @@
 .settings-row-col {
   flex-direction: column;
   align-items: stretch;
+}
+/* Provider key rows (name + badge + input + 3 buttons + status) cannot fit
+   a 400px window on one line — without this they overflow horizontally and
+   Save/Remove/Test end up unreachable behind the scroll edge (QA evidence
+   b-settings-ai-providers.png). Wrap onto two lines instead:
+   line 1 = provider name + badge, line 2 = key input + actions. */
+.settings-row[data-provider] {
+  flex-wrap: wrap;
+  row-gap: var(--sp-2);
+}
+.settings-row[data-provider] .settings-name {
+  flex: 1 1 auto;
+}
+.settings-row input[data-key-input] {
+  flex: 1 1 130px;
+  min-width: 0;
+  width: auto;
+  padding: 4px 8px;
+  border-radius: var(--r-input, 8px);
+  border: 1px solid var(--n4);
+  background: var(--n2);
+  color: var(--n10);
+  font-size: var(--fs-secondary);
+}
+.settings-row input[data-key-input]:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 .settings-row-info { display: flex; flex-direction: column; gap: 2px; }

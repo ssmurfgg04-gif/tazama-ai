@@ -179,10 +179,27 @@ pub fn memory_search<R: Runtime>(
             .map_err(|e| format!("like query: {e}"))?
             .filter_map(|r| r.ok())
             .collect();
+        bump_access_counts(conn, &rows2);
         return Ok(rows2);
     }
 
+    bump_access_counts(conn, &rows);
     Ok(rows)
+}
+
+/// Increment access_count for returned rows so future importance-ranked
+/// queries have real data (previously schema-only dead code).
+fn bump_access_counts(conn: &rusqlite::Connection, rows: &[Memory]) {
+    if rows.is_empty() {
+        return;
+    }
+    let placeholders = rows.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let sql = format!("UPDATE memories SET access_count = access_count + 1 WHERE id IN ({placeholders})");
+    if let Ok(mut stmt) = conn.prepare(&sql) {
+        let params: Vec<&dyn rusqlite::ToSql> =
+            rows.iter().map(|r| &r.id as &dyn rusqlite::ToSql).collect();
+        let _ = stmt.execute(params.as_slice());
+    }
 }
 
 /// Recall the N most recent memories (default 12).
@@ -333,6 +350,41 @@ mod tests {
             [], |r| r.get(0)
         ).unwrap();
         assert_eq!(exists, 1, "FTS table must exist");
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn bump_access_counts_only_hits() {
+        let (conn, path) = temp_db();
+        let ts = Utc::now().to_rfc3339();
+        for content in ["alpha one", "beta two"] {
+            let id = Uuid::new_v4().to_string();
+            conn.execute(
+                "INSERT INTO memories (id, content, tags, created_at) VALUES (?1, ?2, '[]', ?3)",
+                params![id, content, ts],
+            ).unwrap();
+        }
+        let hit_id: String = conn.query_row(
+            "SELECT id FROM memories WHERE content = 'alpha one'", [], |r| r.get(0),
+        ).unwrap();
+        let other_id: String = conn.query_row(
+            "SELECT id FROM memories WHERE content = 'beta two'", [], |r| r.get(0),
+        ).unwrap();
+        let hit = Memory {
+            id: hit_id.clone(), content: "alpha one".into(),
+            tags: vec![], created_at: ts.clone(), score: 1.0,
+        };
+        bump_access_counts(&conn, std::slice::from_ref(&hit));
+        let n_hit: i64 = conn.query_row(
+            "SELECT access_count FROM memories WHERE id = ?1", params![hit_id], |r| r.get(0),
+        ).unwrap();
+        let n_other: i64 = conn.query_row(
+            "SELECT access_count FROM memories WHERE id = ?1", params![other_id], |r| r.get(0),
+        ).unwrap();
+        assert_eq!(n_hit, 1);
+        assert_eq!(n_other, 0);
+        // Empty slice must be a silent no-op (no malformed `IN ()`).
+        bump_access_counts(&conn, &[]);
         std::fs::remove_file(path).ok();
     }
 }

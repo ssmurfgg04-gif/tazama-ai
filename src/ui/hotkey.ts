@@ -28,7 +28,7 @@ const RESERVED: string[] = ["Ctrl+C", "Ctrl+V", "Ctrl+X", "Ctrl+Z", "Ctrl+A", "A
 
 let registeredHotkeys: HotkeyConfig[] = [];
 
-// â”€â”€â”€ Keycap chip renderer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ------ Keycap chip renderer ------------------------------------------------------------------------------------------------------------
 
 /** Render a shortcut string as a row of keycap chips. */
 export function renderKeycaps(shortcut: string): HTMLElement {
@@ -52,14 +52,14 @@ export function renderKeycaps(shortcut: string): HTMLElement {
 
 function formatKeyName(key: string): string {
   const map: Record<string, string> = {
-    "Ctrl": "âŒƒ", "Shift": "â‡§", "Alt": "âŒ¥", "Meta": "â–",
-    " ": "Space", "ArrowUp": "â†‘", "ArrowDown": "â†“",
-    "ArrowLeft": "â†", "ArrowRight": "â†’",
+    "Ctrl": "⌃", "Shift": "⇧", "Alt": "⌥", "Meta": "❖",
+    " ": "Space", "ArrowUp": "↑", "ArrowDown": "↓",
+    "ArrowLeft": "←", "ArrowRight": "→",
   };
   return map[key] ?? key;
 }
 
-// â”€â”€â”€ Recorder widget â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ------ Recorder widget --------------------------------------------------------------------------------------------------------------------
 
 export function buildHotkeyRecorder(
   currentShortcut: string,
@@ -164,7 +164,7 @@ function checkCollision(shortcut: string): string | null {
   return null;
 }
 
-// â”€â”€â”€ Global shortcut registration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ------ Global shortcut registration ------------------------------------------------------------------------------------------
 
 import {
   register as gsRegister,
@@ -203,7 +203,7 @@ export async function toggleMainWindow(): Promise<void> {
   } catch { /* ignore */ }
 }
 
-// â”€â”€â”€ Push-to-talk â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ------ Push-to-talk --------------------------------------------------------------------------------------------------------------------------
 
 /** Shows a push-to-talk pill overlay. Returns a cleanup fn. */
 export function showPushToTalkPill(): () => void {

@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 use tauri::Manager;
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutEvent, ShortcutState};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 mod agents;
 mod caps;

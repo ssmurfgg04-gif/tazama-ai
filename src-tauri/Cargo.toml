@@ -30,11 +30,15 @@ reqwest = { version = "0.13.5", features = ["json"] }
 tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }
 base64 = "0.22"
 xcap = "0.9"
-uiautomation = "0.25"
 chrono = { version = "0.4", features = ["serde"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 uuid = { version = "1", features = ["v4"] }
 image = { version = "0.25", features = ["png"] }
+
+# ── Windows-only: UIA element walk + SendKeys actuation ──
+# Linux builds compile without these; capture.rs provides stubs (see cfg gates).
+[target.'cfg(windows)'.dependencies]
+uiautomation = "0.25"
 windows = { version = "0.59", features = [
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_System_DataExchange",
@@ -42,7 +46,7 @@ windows = { version = "0.59", features = [
   "Win32_Foundation",
   "Win32_UI_WindowsAndMessaging",
   "Win32_System_LibraryLoader",
-]}
+] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
