@@ -1,0 +1,69 @@
+name: Google Trends Kenya
+on:
+  workflow_dispatch:
+    inputs:
+      terms:
+        description: 'Comma-separated terms (max 5 per batch)'
+        required: true
+        default: 'savings,dividend,fund,mmf,interest rate'
+      timeframe:
+        description: 'Timeframe'
+        default: 'today 12-m'
+      geo:
+        description: 'Geo'
+        default: 'KE'
+
+jobs:
+  trends:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        batch: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install trendspy
+        run: pip install trendspy pandas -q
+      - name: Run trends batch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python << 'EOF'
+          import os, json, sys
+          from trendspy import Trends
+          
+          terms_input = "${{ github.event.inputs.terms }}"
+          terms = [t.strip() for t in terms_input.split(',') if t.strip()]
+          batch_size = 5
+          start = ${{ matrix.batch }} * batch_size
+          batch = terms[start:start+batch_size]
+          
+          if not batch:
+              print('[]')
+              sys.exit(0)
+          
+          tr = Trends(request_delay=2.0)
+          df = tr.interest_over_time(batch, geo="${{ github.event.inputs.geo }}", timeframe="${{ github.event.inputs.timeframe }}")
+          
+          if df.empty:
+              print('[]')
+              sys.exit(0)
+          
+          results = []
+          for term in batch:
+              if term in df.columns:
+                  avg = float(df[term].mean())
+                  maxv = float(df[term].max())
+                  recent = float(df[term].tail(4).mean())
+                  results.append({"term": term, "avg": avg, "max": maxv, "recent_month": recent})
+          
+          print(json.dumps(results))
+          EOF
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: trends-batch-${{ matrix.batch }}
+          path: /tmp/results.json
